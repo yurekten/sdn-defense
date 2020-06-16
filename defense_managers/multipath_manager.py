@@ -720,7 +720,6 @@ class FlowMultipathManager(object):
             if node not in rule_set["datapath_list"]:
                 rule_set["datapath_list"][node] = defaultdict()
                 rule_set["datapath_list"][node]["ip_flow"] = defaultdict()
-                #rule_set["datapath_list"][node]["arp_flow"] = defaultdict()
 
             dp = self.dp_list[node]
             ofproto = dp.ofproto

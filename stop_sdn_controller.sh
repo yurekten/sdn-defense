@@ -1,6 +1,6 @@
 #!/bin/bash
 
-process_name="start_sdn_controller"
+process_name="application_ryu.py"
 for iter in 1 2 3
 do
   process_list=`ps -ef | grep $process_name | awk {'print $2'}`

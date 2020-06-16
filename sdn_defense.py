@@ -9,6 +9,7 @@ from datetime import datetime
 from threading import RLock
 
 import networkx as nx
+from ryu.app.wsgi import WSGIApplication
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
@@ -23,18 +24,24 @@ from ryu.lib.packet import packet
 from ryu.ofproto import ofproto_v1_4, ofproto_v1_3
 from ryu.topology import event
 
+from defense_managers.black_list_manager import BlackListManager
+from configuration import SDN_CONTROLLER_APP_KEY
 from defense_managers.multipath_manager import FlowMultipathManager
 
 CURRENT_PATH = pathlib.Path().absolute()
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.WARNING)
 
-
 class SDNDefenseApp(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_4.OFP_VERSION]
+    _CONTEXTS = {'wsgi': WSGIApplication}
 
     def __init__(self, *args, **kwargs):
         super(SDNDefenseApp, self).__init__(*args, **kwargs)
+        wsgi = kwargs['wsgi']
+        wsgi.register(BlackListManager, {SDN_CONTROLLER_APP_KEY: self})
+
+
         now = int(datetime.now().timestamp())
         self.multipath_report_folder = "multipath-%d" % (now)
         self.multipath_enabled = True  # If True, multipath functions enabled else, all switches work as L2 switch
@@ -467,6 +474,15 @@ class SDNDefenseApp(app_manager.RyuApp):
             self.topology.remove_edge(s1.dpid, s2.dpid)
         if (s2.dpid, s1.dpid) in self.topology.edges:
             self.topology.remove_edge(s2.dpid, s1.dpid)
+
+    @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
+    def _port_status_handler(self, ev):
+        msg = ev.msg
+        reason = msg.reason
+        port_no = msg.desc.port_no
+        if self.no_flood_ports is not None:
+            self._recalculate_flood_ports()
+
 
     @set_ev_cls(ofp_event.EventOFPFlowRemoved, MAIN_DISPATCHER)
     def _flow_removed_handler(self, ev):

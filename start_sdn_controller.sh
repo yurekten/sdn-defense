@@ -1,3 +1,3 @@
 #!/bin/bash
 
-python3 ./start_sdn_controller.py
+python3 ./application_ryu.py
