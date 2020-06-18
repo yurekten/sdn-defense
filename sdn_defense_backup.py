@@ -24,10 +24,9 @@ from ryu.lib.packet import packet
 from ryu.ofproto import ofproto_v1_4, ofproto_v1_3
 from ryu.topology import event
 
-from defense_managers.black_list_manager import BlackListManager
+from defense_managers.blacklist.black_list_manager import BlackListManager
 from configuration import SDN_CONTROLLER_APP_KEY
-from defense_managers.multipath_coordinator import MultipathCoordinator
-from defense_managers.multipath_manager import FlowMultipathManager
+from defense_managers.multipath.flow_multipath_tracker import FlowMultipathManager
 
 CURRENT_PATH = pathlib.Path().absolute()
 logger = logging.getLogger(__name__)

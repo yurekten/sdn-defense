@@ -69,6 +69,7 @@ containerner> xterm rom01 &
 ##### In Terminal rom01
 ```bash
 iperf3 -s -f M
+#or iperf -s -f M
 ```
 
 ```bash
@@ -81,6 +82,7 @@ Server listining on 5201
 
 ```bash
 iperf3 -c 10.0.88.16 -f M -t 20
+#or iperf -c 10.0.88.16 -f M -t 20
 ```
 
 

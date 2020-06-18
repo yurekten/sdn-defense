@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.WARNING)
 REFERENCE_BW = 10000000
 
-class FlowMultipathManager(object):
+class FlowMultipathTracker(object):
     NOT_ACTIVE = 0
     INITIATED = 1
     ACTIVE = 2
@@ -33,7 +33,7 @@ class FlowMultipathManager(object):
     DEAD = 4
     STATES = { 0: "NOT_ACTIVE", 1:"INITIATED", 2:"ACTIVE", 3:"DESTROYING", 4:"DEAD"}
 
-    def __init__(self, caller_app, graph, dp_list, src, first_port, dst, last_port, ip_src, ip_dst,
+    def __init__(self, caller_app, flow_coordinator, graph, dp_list, src, first_port, dst, last_port, ip_src, ip_dst,
                  max_random_paths=100, lowest_flow_priority=30000, 
                  max_installed_path_count=2, max_time_period_in_second=2, 
                  forward_with_random_ip=True, random_ip_subnet="10.93.0.0", random_ip_for_each_hop=True,
@@ -41,6 +41,7 @@ class FlowMultipathManager(object):
                  *args, **kwargs):
 
         self.caller_app = caller_app
+        self.flow_coordinator = flow_coordinator
         self.topology = graph
         self.dp_list = dp_list
         self.src = src
@@ -65,7 +66,7 @@ class FlowMultipathManager(object):
         self.write_file_lock = RLock()
         self.flow_remove_lock = RLock()
 
-        self.state = FlowMultipathManager.NOT_ACTIVE
+        self.state = FlowMultipathTracker.NOT_ACTIVE
 
         self.statistics = defaultdict()
         self.statistics["rule_set"] = defaultdict()
@@ -83,9 +84,9 @@ class FlowMultipathManager(object):
                   "report_folder": self.report_folder}
 
         self.statistics["params"] = params
-        self._reset_manager()
+        self._reset_tracker()
 
-    def _reset_manager(self):
+    def _reset_tracker(self):
 
         self.optimal_paths = None
         self.paths_with_ports = None
@@ -150,7 +151,7 @@ class FlowMultipathManager(object):
         return self.state
 
     def get_active_path_port_for(self, datapath_id):
-        if self.state == FlowMultipathManager.NOT_ACTIVE:
+        if self.state == FlowMultipathTracker.NOT_ACTIVE:
             hub.spawn(self._maintain_paths)
             hub.spawn(self._manage_timing)
             return None
@@ -203,7 +204,7 @@ class FlowMultipathManager(object):
 
                 #deleted_arp_flow = self.statistics["rule_set"][self.rule_set_id]["deleted_arp_flow_count"]
                 path_count = len(self.statistics["rule_set"][rule_id]["path"])
-                if self.state == FlowMultipathManager.ACTIVE or self.state == FlowMultipathManager.INITIATED:
+                if self.state == FlowMultipathTracker.ACTIVE or self.state == FlowMultipathTracker.INITIATED:
 
                     deleted_ip_flow = self.statistics["rule_set"][rule_id]["deleted_ip_flow_count"]
                     #if deleted_arp_flow >= path_count and deleted_ip_flow >= path_count:
@@ -214,7 +215,7 @@ class FlowMultipathManager(object):
                         if max_ip_packet <= 0:
                             self.statistics["idle_count"] = self.statistics["idle_count"] + 1
                             if self.statistics["idle_count"] > 1:
-                                self._set_state(FlowMultipathManager.DESTROYING)
+                                self._set_state(FlowMultipathTracker.DESTROYING)
                         else:
                             self.statistics["idle_count"] = 0
 
@@ -223,12 +224,12 @@ class FlowMultipathManager(object):
             logger.warning(f'{datetime.now()} - Path management thread has started')
         completed = False
         while not completed:
-            if self.state == FlowMultipathManager.DESTROYING or self.state == FlowMultipathManager.DEAD:
+            if self.state == FlowMultipathTracker.DESTROYING or self.state == FlowMultipathTracker.DEAD:
                 self._delete_paths()
                 if self.active_queue.qsize() == 0:
-                    self._set_state(FlowMultipathManager.DEAD)
+                    self._set_state(FlowMultipathTracker.DEAD)
                     hub.sleep(self.max_time_period_in_second / 4)
-                    self.caller_app.flow_manager_is_destroying(self)
+                    self.caller_app.multipath_tracker_is_destroying(self)
                     self._save_statistics()
 
                 completed = True
@@ -244,7 +245,7 @@ class FlowMultipathManager(object):
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(f'{datetime.now()} - Timing thread has started')
         while not completed:
-            if self.state == FlowMultipathManager.DESTROYING or self.state == FlowMultipathManager.DEAD:
+            if self.state == FlowMultipathTracker.DESTROYING or self.state == FlowMultipathTracker.DEAD:
                 exit_loop = False
                 while not exit_loop:
                     try:
@@ -257,9 +258,9 @@ class FlowMultipathManager(object):
                     except queue.Empty:
                         exit_loop = True
 
-                self._set_state(FlowMultipathManager.DEAD)
+                self._set_state(FlowMultipathTracker.DEAD)
                 hub.sleep(self.max_time_period_in_second / 2)
-                self.caller_app.flow_manager_is_destroying(self)
+                self.caller_app.multipath_tracker_is_destroying(self)
                 self._save_statistics()
                 completed = True
             else:
@@ -295,7 +296,7 @@ class FlowMultipathManager(object):
                     random_wait_time = (self.max_time_period_in_second / 4) + random.random() * (self.max_time_period_in_second / 4)
                     hub.sleep(random_wait_time)
 
-                if self.state == FlowMultipathManager.ACTIVE and self.inactive_queue.qsize() < 5:
+                if self.state == FlowMultipathTracker.ACTIVE and self.inactive_queue.qsize() < 5:
                     for index in range(0, len(self.path_choices)):
                         self.inactive_queue.put_nowait((index, self.path_choices[index]))
 
@@ -313,9 +314,9 @@ class FlowMultipathManager(object):
         if state != self.state:
             self.state = state
             if logger.isEnabledFor(logging.WARNING):
-                logger.warning('%s - State is now: %s for %s ' % (datetime.now(), FlowMultipathManager.STATES[self.state], self.flow_info))
-            if state == FlowMultipathManager.DEAD:
-                self._reset_manager()
+                logger.warning('%s - State is now: %s for %s ' % (datetime.now(), FlowMultipathTracker.STATES[self.state], self.flow_info))
+            if state == FlowMultipathTracker.DEAD:
+                self._reset_tracker()
 
 
     def _get_all_possible_paths(self):
@@ -506,11 +507,11 @@ class FlowMultipathManager(object):
         return paths_p
 
     def _update_paths(self):
-        if self.state == FlowMultipathManager.NOT_ACTIVE:
+        if self.state == FlowMultipathTracker.NOT_ACTIVE:
 
-            self._set_state(FlowMultipathManager.INITIATED)
+            self._set_state(FlowMultipathTracker.INITIATED)
 
-            self._reset_manager()
+            self._reset_tracker()
             self._calculate_optimal_paths()
 
             while not self.inactive_queue.empty():
@@ -561,7 +562,7 @@ class FlowMultipathManager(object):
                     now_string = now.strftime("%H:%M:%S.%f")
                     logger.warning(f'{now} - Rule set {rule_set_id} for ({self.src}->{self.dst}) start: [{now_string}] duration: {timeout:02} sec. path: {list(selected_path.keys())}')
 
-                self._set_state(FlowMultipathManager.ACTIVE)
+                self._set_state(FlowMultipathTracker.ACTIVE)
                 if logger.isEnabledFor(logging.INFO):
                     logger.info(f'Installer - {self.flow_info} Put index:{queue_index} item:{index} into active queue {datetime.now()}')
 
@@ -725,7 +726,7 @@ class FlowMultipathManager(object):
             ofproto = dp.ofproto
             match = match_actions[node][0]
             actions = match_actions[node][1]
-            flow_id = self.caller_app.add_flow(dp, priority,
+            flow_id = self.flow_coordinator.add_flow(dp, priority,
                                                   match, actions,
                                                   hard_timeout=hard_timeout,
                                                   idle_timeout=idle_timeout,

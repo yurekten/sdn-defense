@@ -14,35 +14,35 @@ BLACKLIST_IP_POLICY = 101
 WHITELIST_IP_POLICY = 102
 
 
-class FlowMonitorRest(ControllerBase):
+class MultipathManagerRest(ControllerBase):
 
     def __init__(self, req, link, data, **config):
-        super(FlowMonitorRest, self).__init__(req, link, data, **config)
+        super(MultipathManagerRest, self).__init__(req, link, data, **config)
         self.sdn_controller_app = data[SDN_CONTROLLER_APP_KEY]
 
 
-    @route('get_flows', "/flow_monitor/flows", methods=['GET'])
+    @route('get_stats', "/multipath_manager/statistics", methods=['GET'])
     def flow_monitor_flows(self, req, **kwargs):
         comparator = lambda o: o.__str__() if isinstance(o, object) else None
-        stats = self.sdn_controller_app.flow_monitor.statistics
+        stats = self.sdn_controller_app.multipath_manager.get_statistics()
         result = json.dumps(stats, default=comparator)
         return result
 
-    @route('get_status', "/flow_monitor/status", methods=['GET'])
+    @route('get_status', "/multipath_manager/status", methods=['GET'])
     def flow_monitor_get_status(self, req, **kwargs):
 
-        status = self.sdn_controller_app.flow_monitor.get_status()
+        status = self.sdn_controller_app.multipath_manager.get_status()
         return f'{datetime.now()}: Status: {status}'
 
-    @route('delete_flows', "/flow_monitor/reset", methods=['GET'])
+    @route('delete_flows', "/multipath_manager/reset", methods=['GET'])
     def flow_monitor_reset_flows(self, req, **kwargs):
 
-        self.sdn_controller_app.flow_monitor.reset_statistics()
+        self.sdn_controller_app.multipath_manager.reset_statistics()
         return f'{datetime.now()}: Statistics are reset'
 
 
-    @route('delete_flows', "/flow_monitor/save", methods=['GET'])
+    @route('save_flows', "/multipath_manager/save", methods=['GET'])
     def flow_monitor_save_statistics(self, req, **kwargs):
-        manager = self.sdn_controller_app.flow_monitor
+        manager = self.sdn_controller_app.multipath_manager
         filename = manager.save_statistics()
         return f'{datetime.now()}: Statistics are saved into {filename}'
