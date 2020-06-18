@@ -3,15 +3,17 @@ import json
 import os
 import socket
 
+from ryu.lib import hub
+
 SOCKFILE = "/tmp/suricata_ids.socket"
 
-def test():
+def _listen_unix_stream(socket_file):
 
-    if os.path.exists(SOCKFILE):
-        os.unlink(SOCKFILE)
+    if os.path.exists(socket_file):
+        os.unlink(socket_file)
 
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-        sock.bind(SOCKFILE)
+    with hub.socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.bind(socket_file)
         sock.listen(5)
         while True:
             connection = None
@@ -47,4 +49,6 @@ def read_socket(socket):
         return None
     return result_list
 
-test()
+thread = hub.spawn(_listen_unix_stream(SOCKFILE))
+
+thread.join()

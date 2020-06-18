@@ -26,7 +26,7 @@ from ryu.controller import event
 
 
 BUFSIZE = alert.AlertPkt._ALERTPKT_SIZE
-SOCKFILE = "/dev/suricata_alert_"
+SOCKFILE = "/tmp/suricata_alert_"
 
 
 class EventAlert(event.EventBase):
@@ -73,7 +73,7 @@ class SnortLib(app_manager.RyuApp):
         if os.path.exists(SOCKFILE):
             os.unlink(SOCKFILE)
         self.sock = hub.socket.socket(hub.socket.AF_UNIX,
-                                      hub.socket.SOCK_DGRAM)
+                                      hub.socket.SOCK_STREAM)
         self.sock.bind(SOCKFILE)
         hub.spawn(self._recv_loop)
 

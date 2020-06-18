@@ -21,30 +21,30 @@ from ryu.lib.packet import ethernet
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import ipv6
 from ryu.lib.packet import packet
-from ryu.ofproto import ofproto_v1_4
+from ryu.ofproto import ofproto_v1_4, ofproto_v1_3
 from ryu.topology import event
 
 from defense_managers.black_list_manager import BlackListManager
 from configuration import SDN_CONTROLLER_APP_KEY
 from defense_managers.multipath_coordinator import MultipathCoordinator
 from defense_managers.multipath_manager import FlowMultipathManager
-from sdn.topology_monitor import TopologyMonitor
 
 CURRENT_PATH = pathlib.Path().absolute()
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.WARNING)
 
-
 class SDNDefenseApp(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_4.OFP_VERSION]
-    _CONTEXTS = {'wsgi': WSGIApplication}
+    _CONTEXTS = {'wsgi': WSGIApplication, 'network': nx.DiGraph}
 
     def __init__(self, *args, **kwargs):
-
         super(SDNDefenseApp, self).__init__(*args, **kwargs)
         self.wsgi = kwargs['wsgi']
         self.wsgi.register(BlackListManager, {SDN_CONTROLLER_APP_KEY: self})
-        # wsgi.register(MultipathCoordinator, {SDN_CONTROLLER_APP_KEY: self})
+        #wsgi.register(MultipathCoordinator, {SDN_CONTROLLER_APP_KEY: self})
+
+
+
 
         now = int(datetime.now().timestamp())
         self.multipath_report_folder = "multipath-%d" % (now)
@@ -76,22 +76,21 @@ class SDNDefenseApp(app_manager.RyuApp):
 
         logger.warning("............................................................................")
 
-        self.topology_monitor = TopologyMonitor()
-        self.topology = self.topology_monitor.topology
-
-        self.datapath_list = self.topology_monitor.datapath_list
-        # self.no_flood_ports = None
-
         self.flow_managers = defaultdict()
+
 
         self.sw_cookie = defaultdict()
         self.unused_cookie = 0x0010000
+        self.datapath_list = {}
+        self.topology = nx.DiGraph()
 
         self.flows = defaultdict()
 
         self.hosts = {}
         self.host_ip_map = {}
         self.mac_to_port = {}
+
+        self.no_flood_ports = None
 
         self.lock = RLock()
 
@@ -246,6 +245,41 @@ class SDNDefenseApp(app_manager.RyuApp):
         match1 = ofp_parser.OFPMatch(eth_type=0x86DD)  # IPv6
         self.add_flow(datapath, 999, match1, actions, flags=0)
 
+    @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
+    def port_desc_stats_reply_handler(self, ev):
+        switch = ev.msg.datapath
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Port Description Stats for Switch %s" % switch.id)
+        if switch.id in self.topology.nodes:
+
+            sw_ports = defaultdict()
+            port_bandwidths = defaultdict()
+            for port in ev.msg.body:
+                sw_ports[port.port_no] = port
+                max_bw = 0
+                if port.state & 0x01 != 1:  # select port with status different than OFPPS_LINK_DOWN
+                    if switch.ofproto.OFP_VERSION <= ofproto_v1_3.OFP_VERSION:
+                        if max_bw < port.curr_speed:
+                            max_bw = port.curr_speed
+                        if logger.isEnabledFor(level=logging.DEBUG):
+                            # curr value is feature of port. 2112 (dec) and 0x840 Copper and 10 Gb full-duplex rate support
+                            # type 0: ethernet 1: optical 0xFFFF: experimenter
+                            logger.debug("Port:%s state:%s - current features=0x%x, current speed:%s kbps"
+                                         % (port.port_no, port.state, port.curr, port.curr_speed,))
+                    else:
+                        for prop in port.properties:
+                            # select maximum speed
+                            if max_bw < prop.curr_speed:
+                                max_bw = prop.curr_speed
+                            if logger.isEnabledFor(level=logging.DEBUG):
+                                # curr value is feature of port. 2112 (dec) and 0x840 Copper and 10 Gb full-duplex rate support
+                                # type 0: ethernet 1: optical 0xFFFF: experimenter
+                                logger.debug("Port:%s type:%d state:%s - current features=0x%x, current speed:%s kbps"
+                                             % (port.port_no, prop.type, port.state, prop.curr, prop.curr_speed,))
+                port_bandwidths[port.port_no] = max_bw
+            self.topology.nodes[switch.id]["port_desc_stats"] = sw_ports
+            self.topology.nodes[switch.id]["port_bandwidths"] = port_bandwidths
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         msg = ev.msg
@@ -327,12 +361,12 @@ class SDNDefenseApp(app_manager.RyuApp):
                 self._create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_port, priority, flags,
                                                hard_timeout, idle_timeout)
         else:
-
-            no_flood_ports = self.topology_monitor.get_no_flood_ports()
+            if self.no_flood_ports is None:
+                self._recalculate_flood_ports()
             actions = []
-            if dpid in no_flood_ports:
+            if dpid in self.no_flood_ports:
                 for port, port_info in self.datapath_list[dpid].ports.items():
-                    if port_info.state == 4 and port not in no_flood_ports[dpid]:
+                    if port_info.state == 4 and port not in self.no_flood_ports[dpid]:
                         if port != in_port:
                             actions.append(parser.OFPActionOutput(port))
             else:
@@ -374,6 +408,87 @@ class SDNDefenseApp(app_manager.RyuApp):
                                                            "datapath_id": dpid
                                                            }
         return flow_id
+
+    def _recalculate_flood_ports(self):
+        nodes = list(self.topology.nodes)
+        edges = list(self.topology.edges)
+        graph = nx.Graph()
+        graph.add_nodes_from(nodes)
+        graph.add_edges_from(edges)
+
+        spanning_tree = nx.minimum_spanning_tree(graph)
+
+        no_flood_links = list(set(graph.edges) - set(spanning_tree.edges))
+
+        self.no_flood_ports = defaultdict()
+        if len(no_flood_links) > 0:
+            for link in no_flood_links:
+                s1 = link[0]
+                s2 = link[1]
+                e1 = self.topology.edges.get((s1, s2))["port_no"]
+                if s1 not in self.no_flood_ports:
+                    self.no_flood_ports[s1] = set()
+                self.no_flood_ports[s1].add(e1)
+
+                e2 = self.topology.edges.get((s2, s1))["port_no"]
+                if s2 not in self.no_flood_ports:
+                    self.no_flood_ports[s2] = set()
+                self.no_flood_ports[s2].add(e2)
+
+            logger.warning("Flood Ports is updated using spanning tree: %s" % self.no_flood_ports)
+
+    @set_ev_cls(event.EventSwitchEnter)
+    def _switch_enter_handler(self, ev):
+        if logger.isEnabledFor(level=logging.INFO):
+            logger.info("Switch %s is entered" % ev.switch.dp.id)
+        switch = ev.switch.dp
+        ofp_parser = switch.ofproto_parser
+
+        if switch.id not in self.topology.nodes:
+            self.datapath_list[switch.id] = switch
+            self.topology.add_node(switch.id, dp=switch)
+            # Request port/link descriptions, useful for obtaining bandwidth
+            req = ofp_parser.OFPPortDescStatsRequest(switch)
+            switch.send_msg(req)
+
+    @set_ev_cls(event.EventSwitchLeave, MAIN_DISPATCHER)
+    def _switch_leave_handler(self, ev):
+        if logger.isEnabledFor(level=logging.INFO):
+            logger.debug(ev)
+        switch_id = ev.switch.dp.id
+        if switch_id in self.topology.nodes:
+            self.topology.remove_node(switch_id)
+
+    @set_ev_cls(event.EventLinkAdd, MAIN_DISPATCHER)
+    def _link_add_handler(self, ev):
+        if logger.isEnabledFor(level=logging.INFO):
+            logger.debug(ev)
+        s1 = ev.link.src
+        s2 = ev.link.dst
+        self.topology.add_edge(s1.dpid, s2.dpid, port_no=s1.port_no)
+        self.topology.add_edge(s2.dpid, s1.dpid, port_no=s2.port_no)
+        if self.no_flood_ports is not None:
+            self._recalculate_flood_ports()
+
+    @set_ev_cls(event.EventLinkDelete, MAIN_DISPATCHER)
+    def link_delete_handler(self, ev):
+        if logger.isEnabledFor(level=logging.INFO):
+            logger.debug(ev)
+        s1 = ev.link.src
+        s2 = ev.link.dst
+        if (s1.dpid, s2.dpid) in self.topology.edges:
+            self.topology.remove_edge(s1.dpid, s2.dpid)
+        if (s2.dpid, s1.dpid) in self.topology.edges:
+            self.topology.remove_edge(s2.dpid, s1.dpid)
+
+    @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
+    def _port_status_handler(self, ev):
+        msg = ev.msg
+        reason = msg.reason
+        port_no = msg.desc.port_no
+        if self.no_flood_ports is not None:
+            self._recalculate_flood_ports()
+
 
     @set_ev_cls(ofp_event.EventOFPFlowRemoved, MAIN_DISPATCHER)
     def _flow_removed_handler(self, ev):
@@ -430,28 +545,3 @@ class SDNDefenseApp(app_manager.RyuApp):
         with open(file_path, 'w') as outfile:
             json.dump(self.statistics, outfile, default=comparator)
         subprocess.call(['chmod', "-R", '0777', report_path])
-
-    ### topology events
-    @set_ev_cls(event.EventSwitchEnter)
-    def _switch_enter_handler(self, ev):
-        self.topology_monitor.switch_enter_handler(ev)
-
-    @set_ev_cls(event.EventSwitchLeave, MAIN_DISPATCHER)
-    def _switch_leave_handler(self, ev):
-        self.topology_monitor.switch_leave_handler(ev)
-
-    @set_ev_cls(event.EventLinkAdd, MAIN_DISPATCHER)
-    def _link_add_handler(self, ev):
-        self.topology_monitor.link_add_handler(ev)
-
-    @set_ev_cls(event.EventLinkDelete, MAIN_DISPATCHER)
-    def _link_delete_handler(self, ev):
-        self.topology_monitor.link_delete_handler(ev)
-
-    @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
-    def _port_status_handler(self, ev):
-        self.topology_monitor.port_status_handler(ev)
-
-    @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
-    def _port_desc_stats_reply_handler(self, ev):
-        self.topology_monitor.port_desc_stats_reply_handler(ev)

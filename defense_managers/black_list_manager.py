@@ -19,6 +19,17 @@ class BlackListManager(ControllerBase):
         self.black_list = set()
 
 
+    @route('get_all', "/get_all", methods=['GET'])
+    def get_classifier_rules(self, req, **kwargs):
+        return ":)))))) :((((((("
+        # try:
+        #     input = req.json if req.body else {}
+        # except ValueError:
+        #     raise Response(status=400)
+        #
+        # app = self.sdn_controller_app
+
+
     @route('add_classifier_rules', url2, methods=['POST'])
     def create_classifier_rules(self, req, **kwargs):
         try:

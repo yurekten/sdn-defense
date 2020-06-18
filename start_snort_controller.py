@@ -12,7 +12,7 @@ def main():
     sys.argv.append(str(CONTROLLER_PORT))
     sys.argv.append('--enable-debugger')
     sys.argv.append('--observe-links')
-    sys.argv.append('defense_managers.snort_app')
+    sys.argv.append('experiment.test_wsgi')
 
     manager.main()
 
