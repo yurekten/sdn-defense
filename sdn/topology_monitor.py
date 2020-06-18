@@ -3,7 +3,6 @@ import pathlib
 from collections import defaultdict
 
 import networkx as nx
-from dependency_injector import containers, providers
 from ryu.ofproto import ofproto_v1_3
 
 CURRENT_PATH = pathlib.Path().absolute()
