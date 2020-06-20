@@ -25,6 +25,7 @@ from rest.flow_monitor_rest import FlowMonitorRest
 from rest.multipath_manager_rest import MultipathManagerRest
 from sdn.flow_monitor import FlowMonitor
 from sdn.topology_monitor import TopologyMonitor
+from utils.openflow_utils import delete_flow
 
 CURRENT_PATH = pathlib.Path().absolute()
 logger = logging.getLogger(__name__)
@@ -50,7 +51,6 @@ class SDNDefenseApp(app_manager.RyuApp):
         self.host_ip_map = {}
         self.mac_to_port = {}
 
-
         now = int(datetime.now().timestamp())
 
         self.topology_monitor = TopologyMonitor()
@@ -63,6 +63,10 @@ class SDNDefenseApp(app_manager.RyuApp):
 
         self.multipath_manager = MultipathManager(self)
 
+
+    def delete_flow(self, dpid, flow_id):
+        datapath = self.datapath_list[dpid]
+        delete_flow(datapath=datapath, cookie=flow_id)
 
     def _get_next_flow_cookie(self, sw_id):
         if sw_id not in self.sw_cookie:
@@ -201,9 +205,9 @@ class SDNDefenseApp(app_manager.RyuApp):
                 flags = ofproto.OFPFF_SEND_FLOW_REM
 
             self.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_port, priority, flags,
-                                           hard_timeout, idle_timeout)
+                                           hard_timeout, idle_timeout, self)
             self.create_rule_if_not_exist(dpid, dst_ip, src_ip, out_port, in_port, priority, flags,
-                                           hard_timeout, idle_timeout)
+                                           hard_timeout, idle_timeout, self)
         else:
 
             no_flood_ports = self.topology_monitor.get_no_flood_ports()
@@ -228,7 +232,7 @@ class SDNDefenseApp(app_manager.RyuApp):
 
     @cached(cache=TTLCache(maxsize=1024, ttl=1))
     def create_rule_if_not_exist(self, dpid, src_ip, dst_ip, in_port, out_port, priority, flags, hard_timeout,
-                                  idle_timeout):
+                                  idle_timeout, caller):
         datapath = self.datapath_list[dpid]
         parser = datapath.ofproto_parser
 
@@ -239,11 +243,12 @@ class SDNDefenseApp(app_manager.RyuApp):
             ipv4_dst=dst_ip,
             in_port=in_port
         )
-
+        if caller is None:
+            caller = self
         flow_id = self.add_flow(datapath, priority, match, actions, hard_timeout=hard_timeout, flags=flags,
-                                idle_timeout=idle_timeout)
+                                idle_timeout=idle_timeout, caller=caller)
         #TODO: flags == datapath.ofproto.OFPFF_SEND_FLOW_REM will be flags & datapath.ofproto.OFPFF_SEND_FLOW_REM >1
-        if self.host_ip_map[src_ip][0] == dpid and flags == datapath.ofproto.OFPFF_SEND_FLOW_REM:
+        if src_ip in self.host_ip_map and self.host_ip_map[src_ip][0] == dpid and flags == datapath.ofproto.OFPFF_SEND_FLOW_REM:
             self.flow_monitor.add_to_flow_list(dpid, flow_id, match, actions, priority, idle_timeout, hard_timeout)
 
         return flow_id
