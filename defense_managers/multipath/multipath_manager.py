@@ -23,7 +23,7 @@ class MultipathManager():
     def __init__(self, sdn_controller_app):
         self.sdn_controller_app = sdn_controller_app
 
-        self.multipath_enabled = False  # If True, multipath functions enabled else, all switches work as L2 switch
+        self.multipath_enabled = True  # If True, multipath functions enabled else, all switches work as L2 switch
 
         now = int(datetime.now().timestamp())
         self.multipath_report_folder = "multipath-%d" % (now)

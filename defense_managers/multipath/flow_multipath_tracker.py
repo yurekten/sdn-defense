@@ -16,7 +16,7 @@ CURRENT_PATH = pathlib.Path().absolute()
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
-logger.setLevel(level=logging.ERROR)
+logger.setLevel(level=logging.WARNING)
 REFERENCE_BW = 10000000
 
 
@@ -83,23 +83,13 @@ class FlowMultipathTracker(object):
         self.paths_with_ports = None
 
         self.path_choices = None
-        self.last_installed_path_index = -1
-        self.installed_path_indices = []
 
         self.rule_set_id = 0x10000
         self.flow_id_rule_set = defaultdict()
 
-        self.active_queue = queue.Queue()
-        self.initiated_queue = queue.Queue()
-        self.inactive_queue = queue.Queue()
-        self.delete_queue = queue.Queue()
 
         self.active_path = None
-        self.active_path_index = -1
-        self.last_rule_set_expire_time = None
 
-        self.active_queue_update_time = None
-        self.active_queue_oldest_time = None
 
     def get_status(self):
         return self.state
@@ -268,6 +258,9 @@ class FlowMultipathTracker(object):
                     next_index = self._get_virtual_queue_next_index(length, current_index)
                     installed_times[current_index] = (datetime.now().timestamp(), rule_id)
                     if self.state == FlowMultipathTracker.INITIATED:
+                        current_path_index = self.path_choices[current_index]
+                        self.active_path = self.paths_with_ports[current_path_index]
+
                         self._set_state(FlowMultipathTracker.ACTIVE)
 
                 current_time = datetime.now().timestamp()
@@ -281,6 +274,9 @@ class FlowMultipathTracker(object):
                         ip_flows = self.statistics["rule_set"][rule_id]["datapath_list"][self.src]["ip_flow"]
                         flow_id = list(ip_flows.keys())[0]
                         self.flow_coordinator.delete_flow(self.src, flow_id)
+
+                        current_path_index = self.path_choices[start_index]
+                        self.active_path = self.paths_with_ports[current_path_index]
                         logger.warning(f'{datetime.now()} - {self.flow_info} dp:{self.src} flow:{flow_id} is deleted.')
                         del installed_times[index]
                     else:
@@ -325,7 +321,7 @@ class FlowMultipathTracker(object):
                 f'{now} - Rule set {rule_set_id} : Path No:{current_index}(Ind:{current_path_index}, Pri:{priority})  for ({self.src}->{self.dst}) start: [{now_string}] duration: {timeout:02} sec. path: {list(selected_path.keys())}')
 
         self.statistics["rule_set"][rule_set_id]["installed_path_index"] = current_path_index
-        self.statistics["rule_set"][rule_set_id]["choise_index"] = self.last_installed_path_index
+        self.statistics["rule_set"][rule_set_id]["choise_index"] = current_index
 
         return rule_set_id
 
