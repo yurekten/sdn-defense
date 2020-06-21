@@ -87,7 +87,6 @@ class FlowMultipathTracker(object):
         self.rule_set_id = 0x10000
         self.flow_id_rule_set = defaultdict()
 
-
         self.active_path = None
 
 
@@ -277,7 +276,7 @@ class FlowMultipathTracker(object):
 
                         current_path_index = self.path_choices[start_index]
                         self.active_path = self.paths_with_ports[current_path_index]
-                        logger.warning(f'{datetime.now()} - {self.flow_info} dp:{self.src} flow:{flow_id} is deleted.')
+                        logger.info(f'{datetime.now()} - {self.flow_info} dp:{self.src} flow:{flow_id} is deleted.')
                         del installed_times[index]
                     else:
                         break

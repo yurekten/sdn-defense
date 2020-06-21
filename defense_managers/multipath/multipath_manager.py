@@ -9,6 +9,8 @@ from datetime import datetime
 from threading import RLock
 
 import networkx as nx
+
+from defense_managers.base_manager import BaseDefenseManager
 from defense_managers.multipath.flow_multipath_tracker import FlowMultipathTracker
 from utils.file_utils import save_dict_to_file
 
@@ -18,21 +20,21 @@ logger.setLevel(level=logging.WARNING)
 REFERENCE_BW = 10000000
 
 
-class MultipathManager():
+class MultipathManager(BaseDefenseManager):
 
-    def __init__(self, sdn_controller_app):
-        self.sdn_controller_app = sdn_controller_app
-
-        self.multipath_enabled = True  # If True, multipath functions enabled else, all switches work as L2 switch
+    def __init__(self, sdn_controller_app, multipath_enabled=True):
 
         now = int(datetime.now().timestamp())
-        self.multipath_report_folder = "multipath-%d" % (now)
-        self.statistics = defaultdict()
+        report_folder = "multipath-%d" % (now)
+        name = "multipath_manager"
+        super(MultipathManager, self).__init__(name, sdn_controller_app, multipath_enabled, report_folder)
+
+
         self.activation_delay = 1  # (sec.) flow is checked after activation_delay to active multipath
         self.min_packet_in_period = 10  # After activation delay, Multipath starts if flow packet count is greater than min_packet_in_period
         self.multipath_tracker_params = {
             # if multipath_enabled is enabled, it defines parameters of multipath trackers
-            'forward_with_random_ip': False,  # random ip generation is activated.
+            'forward_with_random_ip': True,  # random ip generation is activated.
             'random_ip_for_each_hop': False,  # if False, first node generates random ip
             'random_ip_subnet': "10.93.0.0",  # random ip subnet, default mask is 255.255.0.0
             'max_random_paths': 200,  # maximum random paths used in multipath trackers
@@ -41,9 +43,9 @@ class MultipathManager():
             'lowest_flow_priority': 20000,  # minimum flow priority in random path flows
         }
         logger.warning("............................................................................")
-        logger.warning("SDN CONTROLLER started - multipath enabled:  %s" % self.multipath_enabled)
+        logger.warning("SDN CONTROLLER started - multipath enabled:  %s" % self.enabled)
 
-        if self.multipath_enabled:
+        if self.enabled:
             logger.warning("..... multipath starts if activation_delay    :  %s" % self.activation_delay)
             logger.warning("..... multipath starts if min_packet_in_period:  %s" % self.min_packet_in_period)
             params = json.dumps(self.multipath_tracker_params, indent=4, separators=(',', '= '))
@@ -52,38 +54,22 @@ class MultipathManager():
         logger.warning("............................................................................")
 
         self.multipath_trackers = defaultdict()
-
         self.lock = RLock()
-
-        self.host_ip_map = self.sdn_controller_app.host_ip_map
-        self.hosts = self.sdn_controller_app.hosts
-        self.topology = self.sdn_controller_app.topology
-        self.datapath_list = self.sdn_controller_app.datapath_list
-        self.flow_coordinator = self.sdn_controller_app
-
         self.all_possible_paths = {}
 
-    def get_statistics(self):
-        return self.statistics
 
-    def reset_statistics(self):
-        self.statistics.clear()
 
     def get_status(self):
-        return {"multipath_enabled": self.multipath_enabled,
+        return {"multipath_enabled": self.enabled,
                 "activation_delay": self.activation_delay,
                 "min_packet_in_period": self.min_packet_in_period,
-                "multipath_report_folder": self.multipath_report_folder,
+                "multipath_report_folder": self.report_folder,
                 "multipath_tracker_params": self.multipath_tracker_params,
                 "active_multipath_trackers_count": len(self.multipath_trackers),
                 "active_multipath_trackers": list(self.multipath_trackers.keys()),
                 "statistics_count": len(self.statistics)
                 }
 
-    def save_statistics(self):
-        now = int(datetime.now().timestamp())
-        file_name = "%s-multipath-flow-stats.json" % (now)
-        return save_dict_to_file(self.multipath_report_folder, file_name, self.statistics)
 
     def _start_multipath_tracker(self, ipv4_src, ipv4_dst):
 
@@ -124,7 +110,7 @@ class MultipathManager():
                         f"{datetime.now()} - Terminate multipath tracker {flow.flow_info}  at {datetime.now()}")
 
     def get_active_path_port_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        if not self.multipath_enabled:
+        if not self.enabled:
             return None
         if (src, first_port, dst, last_port, ip_src, ip_dst) in self.multipath_trackers:
             multipath_tracker = self.multipath_trackers[(src, first_port, dst, last_port, ip_src, ip_dst)]
@@ -132,10 +118,27 @@ class MultipathManager():
             return output_port
         return None
 
+    def initiate_flow_manager_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
+        out_port = self.get_active_path_port_for(src, first_port, dst, last_port, ip_src, ip_dst, current_dpid)
+        if out_port is None:
+            return None
+        parser = self.datapath_list[current_dpid].ofproto_parser
+        ofproto = self.datapath_list[current_dpid].ofproto
+        actions = [parser.OFPActionOutput(out_port)]
+
+        action_instructions = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
+        return action_instructions
+
+    def can_manage_flow(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
+        if not self.enabled:
+            return False
+        else:
+            return True
+
     def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_port):
-        if not self.multipath_enabled:
+        if not self.enabled:
             return
-        if self.multipath_enabled and src_ip in self.host_ip_map and dst_ip in self.host_ip_map:
+        if self.enabled and src_ip in self.host_ip_map and dst_ip in self.host_ip_map:
 
             src = self.host_ip_map[src_ip][2]
             dst = self.host_ip_map[dst_ip][2]
@@ -165,10 +168,10 @@ class MultipathManager():
                                                              hard_timeout + 1, idle_timeout, self)
 
     def flow_removed(self, msg):
-        if not self.multipath_enabled:
+        if not self.enabled:
             return
         ofproto = msg.datapath.ofproto
-        if self.multipath_enabled:
+        if self.enabled:
             if msg.reason == ofproto.OFPRR_HARD_TIMEOUT:
                 ipv4_src = None
                 ipv4_dst = None
