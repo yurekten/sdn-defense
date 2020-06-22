@@ -118,6 +118,9 @@ class MultipathManager(BaseDefenseManager):
             return output_port
         return None
 
+    def new_packet_detected(self, msg, dpid, in_port, src_ip, dst_ip, eth_src, eth_dst):
+        pass
+
     def initiate_flow_manager_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         out_port = self.get_active_path_port_for(src, first_port, dst, last_port, ip_src, ip_dst, current_dpid)
         if out_port is None:

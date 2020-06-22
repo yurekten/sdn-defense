@@ -184,14 +184,15 @@ class SDNDefenseApp(app_manager.RyuApp):
             # ignore other packets
             return
 
-        if src not in self.hosts:
+        if src_ip not in self.host_ip_map:
             self.hosts[src] = (dpid, in_port, src_ip)
             self.host_ip_map[src_ip] = (dpid, in_port, src)
 
-            for manager in self.defense_managers:
-                result = manager.new_src_ip_detected(dpid, in_port, src_ip, src)
-                if result == ProcessResult.FINISH:
-                    return
+        for manager in self.defense_managers:
+            result = manager.new_packet_detected(msg, dpid, in_port, src_ip, dst_ip, src, dst)
+            if result == ProcessResult.FINISH:
+                return
+
 
         out_port = None
         manager_instructions = {}
@@ -200,6 +201,8 @@ class SDNDefenseApp(app_manager.RyuApp):
             h1 = self.hosts[src]
             h2 = self.hosts[dst]
             if h1[0] == dpid:
+
+
                 filter_function = lambda x: x.can_manage_flow(h1[0], h1[1], h2[0], h2[1], src_ip, dst_ip, dpid)
 
                 managers = list(filter(filter_function, self.defense_managers))

@@ -49,7 +49,7 @@ class BaseDefenseManager(ABC):
 
 
     @abstractmethod
-    def new_src_ip_detected(self, dpid, in_port, ip_src, eth_src):
+    def new_packet_detected(self, msg, dpid, in_port, src_ip, dst_ip, eth_src, eth_dst):
         pass
 
     @abstractmethod
