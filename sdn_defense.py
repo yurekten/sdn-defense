@@ -22,10 +22,11 @@ from configuration import SDN_CONTROLLER_APP_KEY
 from defense_managers.base_manager import ProcessResult
 from defense_managers.blacklist.blacklist_manager import BlacklistManager
 from defense_managers.multipath.multipath_manager import MultipathManager
+from defense_managers.reroute.reroute_manager import RerouteManager
 from rest.flow_monitor_rest import FlowMonitorRest
 from rest.multipath_manager_rest import MultipathManagerRest
-from sdn.flow_monitor import FlowMonitor
-from sdn.topology_monitor import TopologyMonitor
+from monitor.flow_monitor import FlowMonitor
+from monitor.topology_monitor import TopologyMonitor
 from utils.openflow_utils import delete_flow
 
 CURRENT_PATH = pathlib.Path().absolute()
@@ -62,11 +63,13 @@ class SDNDefenseApp(app_manager.RyuApp):
         flows_report_folder = "flows-%d" % (now)
         self.flow_monitor = FlowMonitor(flows_report_folder, watch_generated_flows)
         multipath_enabled = True
-        blacklist_enabled = True
+        blacklist_enabled = False
+        reroute_enabled = True
 
         self.defense_managers_dict = {}
         self.multipath_manager = MultipathManager(self, multipath_enabled)
         self.blacklist_manager = BlacklistManager(self, blacklist_enabled)
+        self.reroute_manager = RerouteManager(self,reroute_enabled )
         self.defense_managers_dict[self.multipath_manager.name] = self.multipath_manager
         self.defense_managers_dict[self.blacklist_manager.name] = self.blacklist_manager
         self.defense_managers = [self.blacklist_manager, self.multipath_manager]

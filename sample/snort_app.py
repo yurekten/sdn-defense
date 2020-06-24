@@ -12,7 +12,7 @@ from ryu.lib.packet import ethernet
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import icmp
 
-from defense_managers.snort_lib import SnortLib, EventAlert
+from sample.snort_lib import SnortLib, EventAlert
 
 
 class SimpleSwitchSnort(app_manager.RyuApp):
