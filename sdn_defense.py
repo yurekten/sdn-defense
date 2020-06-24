@@ -42,7 +42,7 @@ class SDNDefenseApp(app_manager.RyuApp):
 
         super(SDNDefenseApp, self).__init__(*args, **kwargs)
         self.wsgi = kwargs['wsgi']
-        #self.wsgi.register(BlacklistManager, {SDN_CONTROLLER_APP_KEY: self})
+
         self.wsgi.register(FlowMonitorRest, {SDN_CONTROLLER_APP_KEY: self})
         self.wsgi.register(MultipathManagerRest, {SDN_CONTROLLER_APP_KEY: self})
 
@@ -63,8 +63,8 @@ class SDNDefenseApp(app_manager.RyuApp):
         flows_report_folder = "flows-%d" % (now)
         self.flow_monitor = FlowMonitor(flows_report_folder, watch_generated_flows)
         multipath_enabled = True
-        blacklist_enabled = False
-        reroute_enabled = True
+        blacklist_enabled = True
+        reroute_enabled = False
 
         self.defense_managers_dict = {}
         self.multipath_manager = MultipathManager(self, multipath_enabled)
@@ -217,8 +217,10 @@ class SDNDefenseApp(app_manager.RyuApp):
                         valid_instructions.append(instructions)
                 x = 1
 
+        #TODO: WILL be updated
         if len(valid_instructions) > 0:
-            self.add_flow(datapath, pri)
+            self.add_flow(datapath, priority=100, match=None, actions=None, buffer_id=None, hard_timeout=0, flags=0, cookie=0,
+            table_id=0, idle_timeout=0, caller=None, instructions=valid_instructions[0])
             return
 
         if len(valid_instructions) <= 0:

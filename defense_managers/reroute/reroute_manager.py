@@ -35,8 +35,8 @@ class RerouteManager(BaseDefenseManager):
         logger.warning("............................................................................")
         logger.warning("Reroute manager enabled:  %s" % self.enabled)
         logger.warning("............................................................................")
-
-        hub.spawn(self._listen_unix_stream(SOCKFILE))
+        if reroute_enabled:
+            hub.spawn(self._listen_unix_stream(SOCKFILE))
 
     def _listen_unix_stream(self, socket_file):
 
