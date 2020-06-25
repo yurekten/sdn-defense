@@ -1,61 +1,113 @@
-import json
 import logging
-import pathlib
-from collections import defaultdict
+import os
 from datetime import datetime
 
-from iptc.ip6tc import ip6tc
 from ryu.lib.packet import ether_types
 
 from defense_managers.base_manager import BaseDefenseManager, ProcessResult
-from utils.file_utils import save_dict_to_file
+from utils.common_utils import is_valid_remote_ip
 
-CURRENT_PATH = pathlib.Path().absolute()
+CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
-logger.setLevel(level=logging.WARNING)
-REFERENCE_BW = 10000000
 
-deafult_blacklist = ["10.0.88.3", "10.0.88.1"]
 
 class BlacklistManager(BaseDefenseManager):
 
-
-    def __init__(self, sdn_controller_app, blacklist_enabled=True):
-
+    def __init__(self, sdn_controller_app, blacklist_enabled=True, max_blacklist_item_count=30000,
+                 blacklist_idle_timeout=10, ip_whitelist_file="ip_whitelist.txt", ip_blacklist_file="ip_blacklist.txt"):
+        """
+        :param sdn_controller_app: Ryu Controller App
+        :param blacklist_enabled: If True, blacklist is enabled
+        """
         now = int(datetime.now().timestamp())
-        report_folder = "blacklist-%d" % (now)
+        report_folder = "blacklist-%d" % now
         name = "blacklist_manager"
         super(BlacklistManager, self).__init__(name, sdn_controller_app, blacklist_enabled, report_folder)
 
-        self.max_blacklist_item_count = 10000
+        self.max_blacklist_item_count = max_blacklist_item_count
+        self.ip_whitelist_file = ip_whitelist_file
+        self.ip_blacklist_file = ip_blacklist_file
+
         self.blacklist = {}
         self.applied_blacklist = {}
-        self.statistics["blacklist"] = self.blacklist
+
         self.statistics["applied_blacklist"] = {}
         self.statistics["hit_count"] = 0
         self.statistics["reset_time"] = datetime.now().timestamp()
+        self.blacklist_idle_timeout = blacklist_idle_timeout
+
         logger.warning("............................................................................")
         logger.warning("SDN CONTROLLER started - blacklist enabled:  %s" % self.enabled)
 
         if self.enabled:
             logger.warning("..... blacklist max item count  %s" % self.max_blacklist_item_count)
-        logger.warning("............................................................................")
+            logger.warning("..... blacklist idle timeout: %s" % self.blacklist_idle_timeout)
+            logger.warning("..... report folder: %s" % self.report_folder)
 
+        self.whitelist = []
+        self._initialize_whitelist()
         self._initialize_blacklist()
 
-    def _initialize_blacklist(self):
+    def _initialize_whitelist(self):
+        """
+        Reads file from self.ip_whitelist_file to exclude from blacklist.
+        Lines of ip_whitelist_file are like that:
+        8.8.8.8
+        1.1.1.1
+        4.4.4.4
+        """
         if self.enabled:
-            for item in deafult_blacklist:
-                self.blacklist[item] = (0, None, None)
+            file_path = os.path.join(CURRENT_PATH, self.ip_whitelist_file)
+            with open(file_path) as f:
+                content = f.readlines()
 
+            content = [x.strip() for x in content]
+            for item in content:
+                self.whitelist.append(item.strip())
+
+    def _initialize_blacklist(self):
+        """
+        Reads file from self.ip_blacklist_file and parse tuples. File content is like that.
+        ('xyz', '1.2.3.4')
+        ('abc.com', '12.21.32.42')
+        ...
+        Ip addresses that are not valid remote address or in whitelist are excuded.
+        """
+        if self.enabled:
+            file_path = os.path.join(CURRENT_PATH, self.ip_blacklist_file)
+            with open(file_path) as f:
+                content = f.readlines()
+
+            content = [x.strip() for x in content]
+            for item in content:
+                ip_tuple = item.replace("(", "").replace(")", "").replace("'", "").replace(" ", "").split(",")
+                ip = ip_tuple[1]
+                url = ip_tuple[0]
+
+                if ip not in self.whitelist and is_valid_remote_ip(ip):
+
+                    if ip not in self.blacklist:
+                        self.blacklist[ip] = {}
+
+                    if "url" not in self.blacklist[ip]:
+                        self.blacklist[ip]["url"] = set()
+
+                    self.blacklist[ip]["url"].add(url)
+
+            logger.warning("..... current blacklist item count  %s" % len(self.blacklist))
 
     def get_status(self):
+        """
+        :return: manager status dictianary
+        """
         return {"enabled": self.enabled,
                 "report_folder": self.report_folder,
+                "max_blacklist_item_count": self.max_blacklist_item_count,
                 "current_blacklist_count": len(self.blacklist),
-                "max_blacklist_item_count":self.max_blacklist_item_count,
-                "hit_count":self.statistics["hit_count"],
-                "reset_time":datetime.fromtimestamp(self.statistics["reset_time"])
+                "applied_blacklist_count": len(self.applied_blacklist),
+                "applied_blacklist": self.applied_blacklist,
+                "hit_count": self.statistics["hit_count"],
+                "reset_time": datetime.fromtimestamp(self.statistics["reset_time"])
 
                 }
 
@@ -69,7 +121,8 @@ class BlacklistManager(BaseDefenseManager):
             dp = self.datapath_list[dpid]
             ofproto = dp.ofproto
             matches = []
-            if src_ip in self.blacklist and src_ip not in self.applied_blacklist:
+            if src_ip in self.blacklist and (
+                    src_ip not in self.applied_blacklist or dpid not in self.applied_blacklist[src_ip]):
                 match = parser.OFPMatch(
                     eth_type=ether_types.ETH_TYPE_IP,
                     ipv4_src=src_ip
@@ -77,7 +130,8 @@ class BlacklistManager(BaseDefenseManager):
                 matches.append(match)
                 self._add_ip_to_blacklist(dpid, src_ip)
 
-            if dst_ip in self.blacklist and dst_ip not in self.applied_blacklist:
+            if dst_ip in self.blacklist and (
+                    dst_ip not in self.applied_blacklist or dpid not in self.applied_blacklist[dst_ip]):
                 match = parser.OFPMatch(
                     eth_type=ether_types.ETH_TYPE_IP,
                     ipv4_dst=dst_ip
@@ -88,30 +142,35 @@ class BlacklistManager(BaseDefenseManager):
             if len(matches) > 0:
                 self.statistics["hit_count"] = self.statistics["hit_count"] + 1
                 actions = None
-                hard_timeout = 10
 
-                action_instructions = [parser.OFPInstructionActions(ofproto.OFPIT_CLEAR_ACTIONS, [])]
+                action_instructions = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, [])]
                 for match in matches:
                     flow_id = self.sdn_controller_app.add_flow(dp, priority,
-                                                             match, actions,
-                                                             hard_timeout=hard_timeout,
-                                                             idle_timeout=0,
-                                                             flags=ofproto.OFPFF_SEND_FLOW_REM,
-                                                             instructions=action_instructions,
-                                                             caller=self)
+                                                               match, actions,
+                                                               hard_timeout=0,
+                                                               idle_timeout=self.blacklist_idle_timeout,
+                                                               flags=ofproto.OFPFF_SEND_FLOW_REM,
+                                                               instructions=action_instructions,
+                                                               caller=self)
+                    if logger.isEnabledFor(logging.INFO):
+                        logger.info(f'Blacklist {match} is inserted into {dpid} with id:{flow_id}')
 
             return ProcessResult.FINISH
         return ProcessResult.CONTINUE
 
     def _add_ip_to_blacklist(self, dpid, ip):
-        if ip not in self.statistics["applied_blacklist"]:
+        if ip not in self.applied_blacklist:
             self.statistics["applied_blacklist"][ip] = {}
             self.applied_blacklist[ip] = []
         if dpid not in self.statistics["applied_blacklist"][ip]:
             self.statistics["applied_blacklist"][ip][dpid] = {}
             self.statistics["applied_blacklist"][ip][dpid]["hit_count"] = 0
-            self.statistics["applied_blacklist"][ip][dpid]["created_time"] = datetime.now().timestamp()
-            self.statistics["applied_blacklist"][ip][dpid]["delete_time"] = None
+            self.statistics["applied_blacklist"][ip][dpid]["first_created_time"] = datetime.now().timestamp()
+            self.statistics["applied_blacklist"][ip][dpid]["packet_count"] = 0
+            self.statistics["applied_blacklist"][ip][dpid]["duration_sec"] = 0
+            self.statistics["applied_blacklist"][ip]["last_delete_time"] = None
+
+        if dpid not in self.applied_blacklist[ip]:
             self.applied_blacklist[ip].append(dpid)
 
         hit_count = self.statistics["applied_blacklist"][ip][dpid]["hit_count"]
@@ -124,16 +183,25 @@ class BlacklistManager(BaseDefenseManager):
 
         if not self.enabled:
             return
-        ofproto = msg.datapath.ofproto
         if self.enabled:
-            if msg.reason == ofproto.OFPRR_HARD_TIMEOUT:
-                ipv4_src = None
-                ipv4_dst = None
-                if "ipv4_src" in msg.match:
-                    ipv4_src = msg.match["ipv4_src"]
-                if "ipv4_dst" in msg.match:
-                    ipv4_dst = msg.match["ipv4_dst"]
+            dpid = msg.datapath.id
 
+            if "ipv4_dst" in msg.match:
+                ipv4_dst = msg.match["ipv4_dst"]
+
+                if ipv4_dst in self.applied_blacklist:
+                    if dpid in self.applied_blacklist[ipv4_dst]:
+                        ind = self.applied_blacklist[ipv4_dst].index(dpid)
+                        if ind >= 0:
+                            del self.applied_blacklist[ipv4_dst][ind]
+                    self.statistics["applied_blacklist"][ipv4_dst][dpid][
+                        "last_delete_time"] = datetime.now().timestamp()
+                    pkt_count = self.statistics["applied_blacklist"][ipv4_dst][dpid]["packet_count"]
+                    self.statistics["applied_blacklist"][ipv4_dst][dpid]["packet_count"] = pkt_count + msg.packet_count
+                    duration = self.statistics["applied_blacklist"][ipv4_dst][dpid]["duration_sec"]
+                    self.statistics["applied_blacklist"][ipv4_dst][dpid]["duration_sec"] = duration + msg.duration_sec
+
+                    logger.warning(f"{datetime.now()} - {ipv4_dst} in {dpid} is removed from applied blacklist.")
 
     def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_port):
         if not self.enabled:
@@ -159,16 +227,16 @@ class BlacklistManager(BaseDefenseManager):
 
     def initiate_flow_manager_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         if ip_src in self.blacklist or ip_dst in self.blacklist:
-
             parser = self.datapath_list[current_dpid].ofproto_parser
             ofproto = self.datapath_list[current_dpid].ofproto
-            action_instructions = [parser.OFPInstructionActions(ofproto.OFPIT_CLEAR_ACTIONS, [])]
+            action_instructions = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, [])]
 
             return action_instructions
         return None
 
     def reset_statistics(self):
+
         super(BlacklistManager, self).reset_statistics()
-        self.statistics["blacklist"] = self.blacklist
+        self.statistics["applied_blacklist"] = {}
         self.statistics["hit_count"] = 0
         self.statistics["reset_time"] = datetime.now().timestamp()

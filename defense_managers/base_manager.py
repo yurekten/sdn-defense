@@ -5,10 +5,12 @@ from enum import Enum
 
 from utils.file_utils import save_dict_to_file
 
+
 class ProcessResult(Enum):
     IGNORE = 0,
     CONTINUE = 1,
     FINISH = 2,
+
 
 class BaseDefenseManager(ABC):
 
@@ -22,7 +24,6 @@ class BaseDefenseManager(ABC):
         self.hosts = self.sdn_controller_app.hosts
         self.topology = self.sdn_controller_app.topology
         self.datapath_list = self.sdn_controller_app.datapath_list
-
 
     def get_statistics(self):
         return self.statistics
@@ -46,7 +47,6 @@ class BaseDefenseManager(ABC):
     @abstractmethod
     def get_active_path_port_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         pass
-
 
     @abstractmethod
     def new_packet_detected(self, msg, dpid, in_port, src_ip, dst_ip, eth_src, eth_dst):

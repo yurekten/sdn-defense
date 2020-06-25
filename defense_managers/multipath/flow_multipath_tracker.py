@@ -1,6 +1,5 @@
 import logging
 import pathlib
-import queue
 import random
 import time
 from collections import defaultdict, Counter
@@ -11,6 +10,7 @@ from ryu.lib import hub
 from ryu.lib.packet import ether_types
 
 from utils.common_utils import entropy
+from utils.openflow_utils import copy_remove_msg_data
 
 CURRENT_PATH = pathlib.Path().absolute()
 
@@ -31,7 +31,7 @@ class FlowMultipathTracker(object):
     def __init__(self, caller_app, flow_coordinator, dp_list, src, first_port, dst, last_port, ip_src, ip_dst,
                  max_random_paths=100, lowest_flow_priority=30000,
                  max_installed_path_count=2, max_time_period_in_second=2, forward_with_random_ip=True,
-                 random_ip_subnet="10.93.0.0", random_ip_for_each_hop=True, *args, **kwargs):
+                 random_ip_subnet="10.93.0.0", random_ip_for_each_hop=True):
 
         self.caller_app = caller_app
         self.flow_coordinator = flow_coordinator
@@ -89,13 +89,12 @@ class FlowMultipathTracker(object):
 
         self.active_path = None
 
-
     def get_status(self):
         return self.state
 
     def get_active_path_port_for(self, datapath_id):
         if self.state == FlowMultipathTracker.NOT_ACTIVE:
-            #hub.spawn(self._time_tracking)
+            # hub.spawn(self._time_tracking)
             hub.spawn(self._maintain_flows)
             return None
 
@@ -115,16 +114,7 @@ class FlowMultipathTracker(object):
                     if msg.cookie in stats:
                         with self.flow_remove_lock:
                             flow_stat = stats[msg.cookie]
-                            flow_stat["removed_time"] = datetime.timestamp(datetime.now())
-                            flow_stat["packet_count"] = msg.packet_count
-                            flow_stat["byte_count"] = msg.byte_count
-                            flow_stat["duration_sec"] = msg.duration_sec
-                            flow_stat["duration_nsec"] = msg.duration_nsec
-                            flow_stat["hard_timeout"] = msg.hard_timeout
-                            flow_stat["idle_timeout"] = msg.idle_timeout
-                            flow_stat["priority"] = msg.priority
-                            flow_stat["reason"] = msg.reason
-                            flow_stat["table_id"] = msg.table_id
+                            copy_remove_msg_data(msg, flow_stat)
 
                             deleted_count = self.statistics["rule_set"][rule_id]["deleted_ip_flow_count"]
                             self.statistics["rule_set"][rule_id]["deleted_ip_flow_count"] = deleted_count + 1
@@ -168,8 +158,6 @@ class FlowMultipathTracker(object):
         self.optimal_paths = sorted_paths
 
         # TODO: Entropy için çalışma yapılacak
-        last_entropy = -1
-
         selected_paths = []
 
         count_of_previous_paths = 1
@@ -190,10 +178,9 @@ class FlowMultipathTracker(object):
                     all_nodes.extend(dp_set)
 
                 counts = dict(Counter(all_nodes))
-                count = sum([item[1] for item in counts.items()])
+                # count = sum([item[1] for item in counts.items()])
 
-                p = [item[1] * 1.0 / count for item in counts.items()]
-                current_entropy = entropy(p)
+                # p = [item[1] * 1.0 / count for item in counts.items()]
                 ent_list = {}
                 for j in range(0, len(cp)):
                     path = cp[j][0]
@@ -212,11 +199,11 @@ class FlowMultipathTracker(object):
 
                 items = sorted(ent_list.items(), key=lambda x: x[1])
                 max_value = items[0]
-                min_value = items[len(items) - 1]
-                dp_set = set(cp[max_value[0]][0]) - {self.src, self.dst}
-                selected_paths.append(cp[max_value[0]])
+                max_value_index = max_value[0]
+                dp_set = set(cp[max_value_index][0]) - {self.src, self.dst}
+                selected_paths.append(cp[max_value_index])
 
-                del cp[max_value[0]]
+                del cp[max_value_index]
 
         # create path cost array
         pw = [item[1] for item in sorted_paths]
@@ -238,8 +225,8 @@ class FlowMultipathTracker(object):
         start_index = -1
         next_index = 0
         installed_times = {}
-        threshold = 0.001
-        period = 1.0 * self.max_time_period_in_second / self.max_installed_path_count
+        # threshold = 0.001
+        # period = 1.0 * self.max_time_period_in_second / self.max_installed_path_count
         length = -1
 
         while self.state != FlowMultipathTracker.DEAD:
@@ -251,10 +238,11 @@ class FlowMultipathTracker(object):
 
             if self.state == FlowMultipathTracker.INITIATED or self.state == FlowMultipathTracker.ACTIVE:
 
-                if self._get_virtual_queue_size(length, start_index, next_index) < self.max_installed_path_count:
-                    current_index =  next_index
+                if FlowMultipathTracker.get_virtual_queue_size(length, start_index,
+                                                               next_index) < self.max_installed_path_count:
+                    current_index = next_index
                     rule_id = self._create_flow_rule(current_index)
-                    next_index = self._get_virtual_queue_next_index(length, current_index)
+                    next_index = FlowMultipathTracker.get_virtual_queue_next_index(length, current_index)
                     installed_times[current_index] = (datetime.now().timestamp(), rule_id)
                     if self.state == FlowMultipathTracker.INITIATED:
                         current_path_index = self.path_choices[current_index]
@@ -266,8 +254,8 @@ class FlowMultipathTracker(object):
                 installed_items = list(installed_times.items())
                 for index, installed_time in installed_items:
                     if installed_time[0] + self.max_time_period_in_second <= current_time:
-                        if self._get_virtual_queue_size(length, start_index, next_index) > 0:
-                            start_index = self._get_virtual_queue_next_index(length, start_index)
+                        if FlowMultipathTracker.get_virtual_queue_size(length, start_index, next_index) > 0:
+                            start_index = FlowMultipathTracker.get_virtual_queue_next_index(length, start_index)
 
                         rule_id = installed_time[1]
                         ip_flows = self.statistics["rule_set"][rule_id]["datapath_list"][self.src]["ip_flow"]
@@ -289,15 +277,16 @@ class FlowMultipathTracker(object):
 
             hub.sleep(self.max_time_period_in_second)
 
-
-    def _get_virtual_queue_size(self,  array_length, start_index, next_index):
+    @staticmethod
+    def get_virtual_queue_size(array_length, start_index, next_index):
         assert next_index != start_index
         if next_index > start_index:
             return next_index - start_index - 1
         else:
             return next_index + array_length - start_index
 
-    def _get_virtual_queue_next_index(self,  array_length, current_index):
+    @staticmethod
+    def get_virtual_queue_next_index(array_length, current_index):
 
         if current_index >= array_length - 1:
             return 0
@@ -317,14 +306,14 @@ class FlowMultipathTracker(object):
             now = datetime.now()
             now_string = now.strftime("%H:%M:%S.%f")
             logger.warning(
-                f'{now} - Rule set {rule_set_id} : Path No:{current_index}(Ind:{current_path_index}, Pri:{priority})  for ({self.src}->{self.dst}) start: [{now_string}] duration: {timeout:02} sec. path: {list(selected_path.keys())}')
+                f'{now} - Rule set {rule_set_id} : Path No:{current_index}(Ind:{current_path_index}, Pri:{priority})\
+                for ({self.src}->{self.dst}) start: [{now_string}] duration: {timeout:02} sec. \
+                path: {list(selected_path.keys())}')
 
         self.statistics["rule_set"][rule_set_id]["installed_path_index"] = current_path_index
         self.statistics["rule_set"][rule_set_id]["choise_index"] = current_index
 
         return rule_set_id
-
-
 
     def create_random_ip(self):
         return self.random_ip_subnet_prefix + "." + str(random.randint(1, 254)) + "." + str(random.randint(1, 254))
@@ -438,9 +427,9 @@ class FlowMultipathTracker(object):
             match = match_actions[node][0]
             actions = match_actions[node][1]
             new_hard_timeout = hard_timeout
-            #if node == first:
-                #hub.sleep(0.1)
-                #new_hard_timeout = new_hard_timeout - 1
+            # if node == first:
+            # hub.sleep(0.1)
+            # new_hard_timeout = new_hard_timeout - 1
 
             flow_id = self.flow_coordinator.add_flow(dp, priority,
                                                      match, actions,

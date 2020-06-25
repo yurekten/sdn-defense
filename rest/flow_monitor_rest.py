@@ -3,14 +3,8 @@ from datetime import datetime
 
 from ryu.app.wsgi import ControllerBase
 from ryu.app.wsgi import route
-from configuration import SDN_CONTROLLER_APP_KEY
 
-url1 = '/add_chains'
-url2 = '/add_classifier_rules'
-url3 = '/create_blacklist_rules'
-BASE_POLICY = 100
-BLACKLIST_IP_POLICY = 101
-WHITELIST_IP_POLICY = 102
+from configuration import SDN_CONTROLLER_APP_KEY
 
 
 class FlowMonitorRest(ControllerBase):

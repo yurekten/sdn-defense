@@ -40,7 +40,7 @@ class TopologyMonitor(object):
                         if max_bw < port.curr_speed:
                             max_bw = port.curr_speed
                         if logger.isEnabledFor(level=logging.DEBUG):
-                            # curr value is feature of port. 2112 (dec) and 0x840 Copper and 10 Gb full-duplex rate support
+                            # curr value is feature of port. 2112 (dec) and 0x840 Copper and 10 Gb full-duplex rate
                             # type 0: ethernet 1: optical 0xFFFF: experimenter
                             logger.debug("Port:%s state:%s - current features=0x%x, current speed:%s kbps"
                                          % (port.port_no, port.state, port.curr, port.curr_speed,))
@@ -50,7 +50,7 @@ class TopologyMonitor(object):
                             if max_bw < prop.curr_speed:
                                 max_bw = prop.curr_speed
                             if logger.isEnabledFor(level=logging.DEBUG):
-                                # curr value is feature of port. 2112 (dec) and 0x840 Copper and 10 Gb full-duplex rate support
+                                # curr value is feature of port. 2112 (dec) and 0x840 Copper and 10 Gb full-duplex rate
                                 # type 0: ethernet 1: optical 0xFFFF: experimenter
                                 logger.debug("Port:%s type:%d state:%s - current features=0x%x, current speed:%s kbps"
                                              % (port.port_no, prop.type, port.state, prop.curr, prop.curr_speed,))

@@ -1,9 +1,6 @@
 import json
 import logging
-import os
 import pathlib
-import subprocess
-import time
 from collections import defaultdict
 from datetime import datetime
 from threading import RLock
@@ -12,7 +9,6 @@ import networkx as nx
 
 from defense_managers.base_manager import BaseDefenseManager
 from defense_managers.multipath.flow_multipath_tracker import FlowMultipathTracker
-from utils.file_utils import save_dict_to_file
 
 CURRENT_PATH = pathlib.Path().absolute()
 logger = logging.getLogger(__name__)
@@ -25,13 +21,13 @@ class MultipathManager(BaseDefenseManager):
     def __init__(self, sdn_controller_app, multipath_enabled=True):
 
         now = int(datetime.now().timestamp())
-        report_folder = "multipath-%d" % (now)
+        report_folder = "multipath-%d" % now
         name = "multipath_manager"
         super(MultipathManager, self).__init__(name, sdn_controller_app, multipath_enabled, report_folder)
 
-
         self.activation_delay = 1  # (sec.) flow is checked after activation_delay to active multipath
-        self.min_packet_in_period = 10  # After activation delay, Multipath starts if flow packet count is greater than min_packet_in_period
+        # After activation delay, Multipath starts if flow packet count is greater than min_packet_in_period
+        self.min_packet_in_period = 10
         self.multipath_tracker_params = {
             # if multipath_enabled is enabled, it defines parameters of multipath trackers
             'forward_with_random_ip': True,  # random ip generation is activated.
@@ -39,7 +35,7 @@ class MultipathManager(BaseDefenseManager):
             'random_ip_subnet': "10.93.0.0",  # random ip subnet, default mask is 255.255.0.0
             'max_random_paths': 200,  # maximum random paths used in multipath trackers
             'max_installed_path_count': 2,  # maximum flow count installed in switch for each path
-            'max_time_period_in_second': 2,  # random path expire time in seconds.
+            'max_time_period_in_second': 4,  # random path expire time in seconds.
             'lowest_flow_priority': 20000,  # minimum flow priority in random path flows
         }
         logger.warning("............................................................................")
@@ -57,8 +53,6 @@ class MultipathManager(BaseDefenseManager):
         self.lock = RLock()
         self.all_possible_paths = {}
 
-
-
     def get_status(self):
         return {"multipath_enabled": self.enabled,
                 "activation_delay": self.activation_delay,
@@ -69,7 +63,6 @@ class MultipathManager(BaseDefenseManager):
                 "active_multipath_trackers": list(self.multipath_trackers.keys()),
                 "statistics_count": len(self.statistics)
                 }
-
 
     def _start_multipath_tracker(self, ipv4_src, ipv4_dst):
 
@@ -191,7 +184,7 @@ class MultipathManager(BaseDefenseManager):
                     if (h1[0], h1[1], h2[0], h2[1], h1[2], h2[2]) in self.multipath_trackers:
                         return
                     if msg.packet_count > self.min_packet_in_period:
-                            self._start_multipath_tracker(ipv4_src, ipv4_dst)
+                        self._start_multipath_tracker(ipv4_src, ipv4_dst)
 
     # not used not, may be soon
     def _request_flow_packet_count(self, in_port, dst, src, datapath_id):
@@ -213,7 +206,7 @@ class MultipathManager(BaseDefenseManager):
         if (src, dst) in self.all_possible_paths:
             return self.all_possible_paths[(src, dst)]
 
-        start = time.perf_counter()
+        # start = time.perf_counter()
         if src == dst:
             if logger.isEnabledFor(level=logging.DEBUG):
                 logger.debug(f"Path selection is completed. src and dst is in same datapath")
@@ -226,7 +219,7 @@ class MultipathManager(BaseDefenseManager):
         for path in path_results:
             paths.append(path)
 
-        selected_paths = self._select_paths(paths)
+        selected_paths = MultipathManager.select_superset_paths(paths)
         all_paths = []
         for path in selected_paths:
             path_cost = self._get_path_cost(path)
@@ -236,7 +229,8 @@ class MultipathManager(BaseDefenseManager):
 
         return self.all_possible_paths[(src, dst)]
 
-    def _select_paths(self, paths):
+    @staticmethod
+    def select_superset_paths(paths):
         selected_paths = paths[:]
         # select only subset paths, eliminate paths contains others
         for x in paths:
@@ -283,6 +277,3 @@ class MultipathManager(BaseDefenseManager):
             p[path[0][-1]] = (in_port, last_port)
             paths_p.append(p)
         return paths_p
-
-
-
