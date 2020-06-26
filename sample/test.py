@@ -2,12 +2,11 @@
 # Reverse compatibility stuffs
 from __future__ import absolute_import, division, print_function
 
-import argparse
 import logging
 import os
 import socket
 import sys
-from builtins import (int, range, str)
+
 
 def set_logging(log_level):
     # Set logging level. Log to directory script was run from as __file__.stderr
@@ -25,7 +24,6 @@ def set_logging(log_level):
         stream=sys.stdout))
     # add info level meessage to log to show start of process
     logging.info('Logging to {dir}/{file}'.format(dir=log_dir, file=log_file))
-
 
 
 def create_socket(path):
@@ -55,7 +53,6 @@ def linesplit(socket):
         yield buffer
 
 
-
 def read_data(sock):
     # Listen for incoming connections
     sock.listen(1)
@@ -79,8 +76,6 @@ def read_data(sock):
 
 
 def run():
-
-
     # Set the logging level based on the config
     set_logging("INFO")
 

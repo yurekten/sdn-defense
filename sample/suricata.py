@@ -5,8 +5,8 @@ import socket
 
 SOCKFILE = "/tmp/suricata_ids.socket"
 
-def test():
 
+def test():
     if os.path.exists(SOCKFILE):
         os.unlink(SOCKFILE)
 
@@ -31,9 +31,8 @@ def test():
                     connection.close()
 
 
-
 def read_socket(socket):
-    buffer = socket.recv(4096*2)
+    buffer = socket.recv(4096 * 2)
     buf_data = buffer.decode("utf-8").strip()
     data = buf_data.split('\n')
 
@@ -46,5 +45,6 @@ def read_socket(socket):
         print(e)
         return None
     return result_list
+
 
 test()

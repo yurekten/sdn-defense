@@ -3,7 +3,6 @@ import socket
 
 
 def entropy(array):
-
     total_entropy = 0
 
     for i in array:

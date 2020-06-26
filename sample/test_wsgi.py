@@ -1,19 +1,18 @@
 import json
 
-from ryu.app import simple_switch_13, simple_switch_14
-from webob import Response
+from ryu.app import simple_switch_14
+from ryu.app.wsgi import ControllerBase, WSGIApplication, route
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
-from ryu.app.wsgi import ControllerBase, WSGIApplication, route
 from ryu.lib import dpid as dpid_lib
+from webob import Response
 
 simple_switch_instance_name = 'simple_switch_api_app'
 url = '/simpleswitch/mactable/{dpid}'
 
 
 class SimpleSwitchRest14(simple_switch_14.SimpleSwitch14):
-
     _CONTEXTS = {'wsgi': WSGIApplication}
 
     def __init__(self, *args, **kwargs):
@@ -42,7 +41,6 @@ class SimpleSwitchRest14(simple_switch_14.SimpleSwitch14):
             if entry_port not in mac_table.values():
 
                 for mac, port in mac_table.items():
-
                     # from known device to new device
                     actions = [parser.OFPActionOutput(entry_port)]
                     match = parser.OFPMatch(in_port=port, eth_dst=entry_mac)

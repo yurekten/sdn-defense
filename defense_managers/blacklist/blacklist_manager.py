@@ -143,17 +143,16 @@ class BlacklistManager(BaseDefenseManager):
                 self.statistics["hit_count"] = self.statistics["hit_count"] + 1
                 actions = None
 
-                action_instructions = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, [])]
+                actions = []
                 for match in matches:
                     flow_id = self.sdn_controller_app.add_flow(dp, priority,
                                                                match, actions,
                                                                hard_timeout=0,
                                                                idle_timeout=self.blacklist_idle_timeout,
                                                                flags=ofproto.OFPFF_SEND_FLOW_REM,
-                                                               instructions=action_instructions,
-                                                               caller=self)
-                    if logger.isEnabledFor(logging.INFO):
-                        logger.info(f'Blacklist {match} is inserted into {dpid} with id:{flow_id}')
+                                                               caller=self, manager=self)
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f'Blacklist {match} is inserted into {dpid} with id:{flow_id}')
 
             return ProcessResult.FINISH
         return ProcessResult.CONTINUE
@@ -177,7 +176,7 @@ class BlacklistManager(BaseDefenseManager):
         self.statistics["applied_blacklist"][ip][dpid]["hit_count"] = hit_count + 1
 
         if logger.isEnabledFor(level=logging.WARNING):
-            logger.warning(f"{datetime.now()} - Blacklist: {ip} in {dpid}")
+            logger.warning(f"{datetime.now()} - {self.name} - Blacklist: {ip} in {dpid}")
 
     def flow_removed(self, msg):
 
@@ -201,7 +200,8 @@ class BlacklistManager(BaseDefenseManager):
                     duration = self.statistics["applied_blacklist"][ipv4_dst][dpid]["duration_sec"]
                     self.statistics["applied_blacklist"][ipv4_dst][dpid]["duration_sec"] = duration + msg.duration_sec
 
-                    logger.warning(f"{datetime.now()} - {ipv4_dst} in {dpid} is removed from applied blacklist.")
+                    logger.warning(
+                        f"{datetime.now()} - {self.name} - {ipv4_dst} in {dpid} is removed from applied blacklist.")
 
     def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_port):
         if not self.enabled:

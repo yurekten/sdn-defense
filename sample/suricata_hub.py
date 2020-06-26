@@ -7,8 +7,8 @@ from ryu.lib import hub
 
 SOCKFILE = "/tmp/suricata_ids.socket"
 
-def _listen_unix_stream(socket_file):
 
+def _listen_unix_stream(socket_file):
     if os.path.exists(socket_file):
         os.unlink(socket_file)
 
@@ -33,9 +33,8 @@ def _listen_unix_stream(socket_file):
                     connection.close()
 
 
-
 def read_socket(socket):
-    buffer = socket.recv(4096*2)
+    buffer = socket.recv(4096 * 2)
     buf_data = buffer.decode("utf-8").strip()
     data = buf_data.split('\n')
 
@@ -48,6 +47,7 @@ def read_socket(socket):
         print(e)
         return None
     return result_list
+
 
 thread = hub.spawn(_listen_unix_stream(SOCKFILE))
 

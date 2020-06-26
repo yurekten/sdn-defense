@@ -260,7 +260,7 @@ class FlowMultipathTracker(object):
                         rule_id = installed_time[1]
                         ip_flows = self.statistics["rule_set"][rule_id]["datapath_list"][self.src]["ip_flow"]
                         flow_id = list(ip_flows.keys())[0]
-                        self.flow_coordinator.delete_flow(self.src, flow_id)
+                        self.flow_coordinator.delete_flow(self.src, flow_id, self)
 
                         current_path_index = self.path_choices[start_index]
                         self.active_path = self.paths_with_ports[current_path_index]
@@ -306,9 +306,7 @@ class FlowMultipathTracker(object):
             now = datetime.now()
             now_string = now.strftime("%H:%M:%S.%f")
             logger.warning(
-                f'{now} - Rule set {rule_set_id} : Path No:{current_index}(Ind:{current_path_index}, Pri:{priority})\
-                for ({self.src}->{self.dst}) start: [{now_string}] duration: {timeout:02} sec. \
-                path: {list(selected_path.keys())}')
+                f'{now} - Rule set {rule_set_id} : Path No:{current_index}(Ind:{current_path_index}, Pri:{priority}) for ({self.src}->{self.dst}) start: [{now_string}] duration: {timeout:02} sec. path: {list(selected_path.keys())}')
 
         self.statistics["rule_set"][rule_set_id]["installed_path_index"] = current_path_index
         self.statistics["rule_set"][rule_set_id]["choise_index"] = current_index
@@ -436,7 +434,7 @@ class FlowMultipathTracker(object):
                                                      hard_timeout=new_hard_timeout,
                                                      idle_timeout=idle_timeout,
                                                      flags=ofproto.OFPFF_SEND_FLOW_REM,
-                                                     caller=self)
+                                                     caller=self, manager=self.caller_app)
 
             stats = rule_set["datapath_list"][node]["ip_flow"]
             timestamp = datetime.timestamp(datetime.now())

@@ -5,7 +5,6 @@ import subprocess
 
 
 def save_dict_to_file(subpath, file_name, save_object, comparator=None):
-
     file_path = os.path.join("reports", subpath)
     pathlib.Path(file_path).mkdir(parents=True, exist_ok=True)
 

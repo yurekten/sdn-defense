@@ -1,8 +1,6 @@
-import datetime
 import json
 import os
-import time
-import csv
+
 
 def extract_data():
     root_dir = "../reports"
@@ -43,6 +41,7 @@ def extract_data():
             for res in all_results:
                 file_writer.writerow(list(res))
 
+
 def get_all_results(stat):
     results = []
     for rule_set_id, value in stat["rule_set"].items():
@@ -55,7 +54,6 @@ def get_all_results(stat):
 
 
 def add_dp_results(flows, dp_name, results, rule_set_id):
-
     key_list = list(flows.keys())
     flow_id = key_list[0]
     flow = flows[flow_id]
@@ -69,9 +67,6 @@ def add_dp_results(flows, dp_name, results, rule_set_id):
 
 
 if __name__ == '__main__':
-
-
     extract_data()
-
 
     pass

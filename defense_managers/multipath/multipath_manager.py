@@ -7,7 +7,7 @@ from threading import RLock
 
 import networkx as nx
 
-from defense_managers.base_manager import BaseDefenseManager
+from defense_managers.base_manager import BaseDefenseManager, ProcessResult
 from defense_managers.multipath.flow_multipath_tracker import FlowMultipathTracker
 
 CURRENT_PATH = pathlib.Path().absolute()
@@ -112,7 +112,7 @@ class MultipathManager(BaseDefenseManager):
         return None
 
     def new_packet_detected(self, msg, dpid, in_port, src_ip, dst_ip, eth_src, eth_dst):
-        pass
+        return ProcessResult.IGNORE
 
     def initiate_flow_manager_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         out_port = self.get_active_path_port_for(src, first_port, dst, last_port, ip_src, ip_dst, current_dpid)
@@ -155,13 +155,13 @@ class MultipathManager(BaseDefenseManager):
             hard_timeout = self.activation_delay
             idle_timeout = 0
             self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_port, priority, flags,
-                                                             hard_timeout, idle_timeout, self)
+                                                             hard_timeout, idle_timeout, self, self)
             self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_port, priority, flags,
-                                                             hard_timeout + 1, idle_timeout, self)
+                                                             hard_timeout + 1, idle_timeout, self, self)
             self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, out_port, in_port, priority, flags,
-                                                             hard_timeout, idle_timeout, self)
+                                                             hard_timeout, idle_timeout, self, self)
             self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, out_port, in_port, priority, flags,
-                                                             hard_timeout + 1, idle_timeout, self)
+                                                             hard_timeout + 1, idle_timeout, self, self)
 
     def flow_removed(self, msg):
         if not self.enabled:

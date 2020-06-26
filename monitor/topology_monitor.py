@@ -1,6 +1,7 @@
 import logging
 import pathlib
 from collections import defaultdict
+from datetime import datetime
 
 import networkx as nx
 from ryu.ofproto import ofproto_v1_3
@@ -84,7 +85,7 @@ class TopologyMonitor(object):
                     self.no_flood_ports[s2] = set()
                 self.no_flood_ports[s2].add(e2)
 
-            logger.warning("Flood Ports is updated using spanning tree: %s" % dict(self.no_flood_ports))
+            logger.warning(f"{datetime.now()} - Spanning tree is updated: %s" % dict(self.no_flood_ports))
 
     def switch_enter_handler(self, ev):
         if logger.isEnabledFor(level=logging.INFO):

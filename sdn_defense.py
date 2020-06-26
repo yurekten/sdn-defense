@@ -1,5 +1,6 @@
 import logging
 import pathlib
+import sys
 from collections import defaultdict
 from datetime import datetime
 
@@ -28,11 +29,12 @@ from monitor.topology_monitor import TopologyMonitor
 from rest.blacklist_manager_rest import BlacklistManagerRest
 from rest.flow_monitor_rest import FlowMonitorRest
 from rest.multipath_manager_rest import MultipathManagerRest
-from utils.openflow_utils import delete_flow
 
 CURRENT_PATH = pathlib.Path().absolute()
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.WARNING)
+
+sys.setrecursionlimit(10000)
 
 
 class SDNDefenseApp(app_manager.RyuApp):
@@ -73,24 +75,66 @@ class SDNDefenseApp(app_manager.RyuApp):
         self.reroute_manager = RerouteManager(self, reroute_enabled)
         self.defense_managers_dict[self.multipath_manager.name] = self.multipath_manager
         self.defense_managers_dict[self.blacklist_manager.name] = self.blacklist_manager
-        self.defense_managers = [self.blacklist_manager, self.multipath_manager]
+        self.defense_managers_dict[self.reroute_manager.name] = self.reroute_manager
+        self.defense_managers = []
+        for manager in list(self.defense_managers_dict.values()):
+            if manager.enabled:
+                self.defense_managers.append(manager)
 
-    def delete_flow(self, dpid, flow_id):
+    def update_manager_status(self, name, enabled):
+        if name in self.defense_managers_dict:
+            if self.defense_managers_dict[name].enabled != enabled:
+                self.defense_managers_dict[name].enabled = enabled
+                if enabled:
+                    self.defense_managers.append(self.defense_managers_dict[name])
+                else:
+                    ind = self.defense_managers.index(self.defense_managers_dict[name])
+                    del self.defense_managers[ind]
+
+    def delete_flow(self, dpid, flow_id, caller):
+
         datapath = self.datapath_list[dpid]
-        delete_flow(datapath=datapath, cookie=flow_id)
+        self.delete_flow_with_datapath(datapath=datapath, cookie=flow_id)
+
+        for manager in self.defense_managers:
+            if caller != manager:
+                manager.flow_is_deleted(dpid, flow_id, caller)
+
+    def delete_flow_with_datapath(self, datapath, cookie=0, cookie_mask=0xFFFFFFFFFFFFFFFF):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        mod = parser.OFPFlowMod(datapath=datapath,
+                                command=ofproto.OFPFC_DELETE,
+                                out_port=ofproto.OFPP_ANY,
+                                out_group=ofproto.OFPG_ANY,
+                                table_id=ofproto.OFPTT_ALL,
+                                cookie=cookie,
+                                cookie_mask=cookie_mask,
+                                )
+        datapath.send_msg(mod)
 
     def add_flow(self, datapath, priority, match, actions, buffer_id=None, hard_timeout=0, flags=0, cookie=0,
-                 table_id=0, idle_timeout=0, caller=None, instructions=None):
+                 table_id=0, idle_timeout=0, caller=None, manager=None):
+        if manager is None:
+            manager = self
+        actions_list = []
+        for active_manager in self.defense_managers:
+            if active_manager != manager:
+                actions_item = active_manager.flow_will_be_added(datapath, priority, match, actions, buffer_id,
+                                                                 hard_timeout, flags, cookie,
+                                                                 table_id, idle_timeout, caller, manager)
+                if actions_item and len(actions_item) > 0:
+                    actions_list.append(actions_item)
+
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
         flow_id = cookie
         if cookie == 0:
             flow_id = self._get_next_flow_cookie(datapath.id)
-        if instructions is None:
-            inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
-        else:
-            inst = instructions
+
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         if buffer_id:
             mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id,
                                     priority=priority, match=match, idle_timeout=idle_timeout,
@@ -199,38 +243,24 @@ class SDNDefenseApp(app_manager.RyuApp):
                 return
 
         out_port = None
-        manager_instructions = {}
-        valid_instructions = []
+        out_port_list = []
         if src in self.hosts and dst in self.hosts:
             h1 = self.hosts[src]
             h2 = self.hosts[dst]
             if h1[0] == dpid:
+                for manager in self.defense_managers:
+                    out = manager.get_active_path_port_for(h1[0], h1[1], h2[0], h2[1], src_ip, dst_ip, dpid)
+                    if out:
+                        out_port_list.append(out)
 
-                filter_function = lambda x: x.can_manage_flow(h1[0], h1[1], h2[0], h2[1], src_ip, dst_ip, dpid)
-
-                managers = list(filter(filter_function, self.defense_managers))
-
-                for manager in managers:
-                    instructions = manager.initiate_flow_manager_for(h1[0], h1[1], h2[0], h2[1], src_ip, dst_ip, dpid)
-                    manager_instructions[manager.name] = instructions
-                    if instructions is not None:
-                        # valid_instructions.append(instructions)
-                        pass
-                x = 1
-
-        # TODO: WILL be updated
-        if len(valid_instructions) > 0:
-            self.add_flow(datapath, priority=100, match=None, actions=None, buffer_id=None, hard_timeout=0, flags=0,
-                          cookie=0,
-                          table_id=0, idle_timeout=0, caller=None, instructions=valid_instructions[0])
-            return
-
-        if len(valid_instructions) <= 0:
-            # if out_port is None:
+        if len(out_port_list) == 0:
             if dst in self.mac_to_port[dpid]:
                 out_port = self.mac_to_port[dpid][dst]
             else:
                 out_port = ofproto.OFPP_FLOOD
+        else:
+            out_port = out_port_list[0]
+
         actions = [parser.OFPActionOutput(out_port)]
         # install a flow to avoid packet_in next time
         if out_port != ofproto.OFPP_FLOOD:
@@ -245,26 +275,18 @@ class SDNDefenseApp(app_manager.RyuApp):
                 flags = ofproto.OFPFF_SEND_FLOW_REM
 
             self.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_port, priority, flags,
-                                          hard_timeout, idle_timeout, self)
+                                          hard_timeout, idle_timeout, self, self)
 
             self.create_rule_if_not_exist(dpid, dst_ip, src_ip, out_port, in_port, priority, flags,
-                                          hard_timeout, idle_timeout, self)
+                                          hard_timeout, idle_timeout, self, self)
             self.create_arp_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_port, priority, flags,
-                                              hard_timeout, idle_timeout, self)
+                                              hard_timeout, idle_timeout, self, self)
 
             self.create_arp_rule_if_not_exist(dpid, dst_ip, src_ip, out_port, in_port, priority, flags,
-                                              hard_timeout, idle_timeout, self)
+                                              hard_timeout, idle_timeout, self, self)
         else:
 
-            no_flood_ports = self.topology_monitor.get_no_flood_ports()
-            actions = []
-            if dpid in no_flood_ports:
-                for port, port_info in self.datapath_list[dpid].ports.items():
-                    if port_info.state == 4 and port not in no_flood_ports[dpid]:
-                        if port != in_port:
-                            actions.append(parser.OFPActionOutput(port))
-            else:
-                actions.append(parser.OFPActionOutput(out_port))
+            actions = self.get_flood_output_actions(dpid, in_port, out_port)
 
         data = None
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
@@ -274,9 +296,24 @@ class SDNDefenseApp(app_manager.RyuApp):
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
 
+    def get_flood_output_actions(self, dpid, in_port, out_port):
+
+        no_flood_ports = self.topology_monitor.get_no_flood_ports()
+        actions = []
+
+        parser = self.datapath_list[dpid].ofproto_parser
+        if dpid in no_flood_ports:
+            for port, port_info in self.datapath_list[dpid].ports.items():
+                if port_info.state == 4 and port not in no_flood_ports[dpid]:
+                    if port != in_port:
+                        actions.append(parser.OFPActionOutput(port))
+        else:
+            actions.append(parser.OFPActionOutput(out_port))
+        return actions
+
     @cached(cache=TTLCache(maxsize=1024, ttl=1))
     def create_arp_rule_if_not_exist(self, dpid, src_ip, dst_ip, in_port, out_port, priority, flags, hard_timeout,
-                                     idle_timeout, caller):
+                                     idle_timeout, caller, manager):
         datapath = self.datapath_list[dpid]
         parser = datapath.ofproto_parser
 
@@ -289,8 +326,10 @@ class SDNDefenseApp(app_manager.RyuApp):
         )
         if caller is None:
             caller = self
+        if manager is None:
+            manager = self
         flow_id = self.add_flow(datapath, priority, match, actions, hard_timeout=hard_timeout, flags=flags,
-                                idle_timeout=idle_timeout, caller=caller)
+                                idle_timeout=idle_timeout, caller=caller, manager=manager)
         flow_rem_flag = flags & datapath.ofproto.OFPFF_SEND_FLOW_REM > 1
         if src_ip in self.host_ip_map and self.host_ip_map[src_ip][0] == dpid and flow_rem_flag:
             self.flow_monitor.add_to_flow_list(dpid, flow_id, match, actions, priority, idle_timeout, hard_timeout)
@@ -299,7 +338,7 @@ class SDNDefenseApp(app_manager.RyuApp):
 
     @cached(cache=TTLCache(maxsize=1024, ttl=1))
     def create_rule_if_not_exist(self, dpid, src_ip, dst_ip, in_port, out_port, priority, flags, hard_timeout,
-                                 idle_timeout, caller):
+                                 idle_timeout, caller, manager):
         datapath = self.datapath_list[dpid]
         parser = datapath.ofproto_parser
 
@@ -312,8 +351,10 @@ class SDNDefenseApp(app_manager.RyuApp):
         )
         if caller is None:
             caller = self
+        if manager is None:
+            manager = self
         flow_id = self.add_flow(datapath, priority, match, actions, hard_timeout=hard_timeout, flags=flags,
-                                idle_timeout=idle_timeout, caller=caller)
+                                idle_timeout=idle_timeout, caller=caller, manager=manager)
         flow_rem_flag = flags & datapath.ofproto.OFPFF_SEND_FLOW_REM > 1
         if src_ip in self.host_ip_map and self.host_ip_map[src_ip][0] == dpid and flow_rem_flag:
             self.flow_monitor.add_to_flow_list(dpid, flow_id, match, actions, priority, idle_timeout, hard_timeout)

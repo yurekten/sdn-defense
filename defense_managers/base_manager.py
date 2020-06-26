@@ -59,3 +59,10 @@ class BaseDefenseManager(ABC):
     @abstractmethod
     def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_port):
         pass
+
+    def flow_will_be_added(self, datapath, priority, match, actions, buffer_id, hard_timeout, flags, cookie,
+                           table_id, idle_timeout, caller, manager):
+        pass
+
+    def flow_is_deleted(self, dpid, flow_id, caller):
+        pass

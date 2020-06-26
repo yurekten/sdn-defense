@@ -14,16 +14,13 @@
 # limitations under the License.
 
 
-import os
 import logging
-import socket
+import os
 
 import six
-
-from ryu.lib import hub, alert
 from ryu.base import app_manager
 from ryu.controller import event
-
+from ryu.lib import hub, alert
 
 BUFSIZE = alert.AlertPkt._ALERTPKT_SIZE
 SOCKFILE = "/tmp/suricata_alert_"

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import sys
 
-from ryu.cmd import manager
 from ryu.base.app_manager import AppManager
+from ryu.cmd import manager
 
 from configuration import CONTROLLER_PORT
 

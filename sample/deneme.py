@@ -1,10 +1,10 @@
 import os
 import pathlib
+import socket
 import threading
 from queue import Queue, Empty
-import socket
-from dns.resolver import query, NoNameservers, NoAnswer, NXDOMAIN
 from urllib.parse import urlparse
+
 
 def read_file():
     CURRENT_PATH = pathlib.Path().absolute()
@@ -34,7 +34,7 @@ def read_file():
 
     with open('../defense_managers/blacklist/ip_blacklist.txt', 'w') as writer:
         for item in ip_list:
-            writer.write(str(item)+"\n")
+            writer.write(str(item) + "\n")
 
 
 def _queue_worker(name, queue, ip_list):
@@ -47,21 +47,19 @@ def _queue_worker(name, queue, ip_list):
     while valid:
         try:
             parsed_uri = urlparse(item[1])
-            #ip_add = query(parsed_uri.hostname, 'A')
+            # ip_add = query(parsed_uri.hostname, 'A')
             ipval = socket.gethostbyname(parsed_uri[2])
-            #for ipval in ip_add:
+            # for ipval in ip_add:
             print(f'{item[0]} - Thread - {name}: {item[1]} -> {ipval}')
             ip_list.append((item[1], ipval))
         except Exception:
             print(f'{item[0]} - Thread - {name}: {item[1]} -> None')
-            #ip_list.append((item[1], None))
-
+            # ip_list.append((item[1], None))
 
         try:
             item = queue.get(block=False)
         except Empty:
             valid = False
-
 
 
 read_file()
