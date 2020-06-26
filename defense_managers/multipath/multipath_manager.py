@@ -20,8 +20,8 @@ class MultipathManager(BaseDefenseManager):
 
     def __init__(self, sdn_controller_app, multipath_enabled=True):
 
-        now = int(datetime.now().timestamp())
-        report_folder = "multipath-%d" % now
+        now = datetime.now()
+        report_folder = "multipath-%d" % int(now.timestamp())
         name = "multipath_manager"
         super(MultipathManager, self).__init__(name, sdn_controller_app, multipath_enabled, report_folder)
 
@@ -38,16 +38,22 @@ class MultipathManager(BaseDefenseManager):
             'max_time_period_in_second': 4,  # random path expire time in seconds.
             'lowest_flow_priority': 20000,  # minimum flow priority in random path flows
         }
+
         logger.warning("............................................................................")
-        logger.warning("SDN CONTROLLER started - multipath enabled:  %s" % self.enabled)
+        if self.enabled:
+            logger.warning(f"{now} - {self.name} - Multipath manager is enabled")
+        else:
+            logger.warning(f"{now} - {self.name} - Multipath manager is initiated but not enabled")
 
         if self.enabled:
-            logger.warning("..... multipath starts if activation_delay    :  %s" % self.activation_delay)
-            logger.warning("..... multipath starts if min_packet_in_period:  %s" % self.min_packet_in_period)
-            params = json.dumps(self.multipath_tracker_params, indent=4, separators=(',', '= '))
-            logger.warning("..... multipath tracker params: \n%s" % params)
 
-        logger.warning("............................................................................")
+            logger.warning(f"{now} - {self.name} - Multipath starts if activation_delay: {self.activation_delay}")
+            logger.warning(f"{now} - {self.name} - Minimum period: {self.min_packet_in_period}")
+            logger.warning(f"{now} - {self.name} - Start if min_packet count in period: {self.min_packet_in_period}")
+
+            params = json.dumps(self.multipath_tracker_params, indent=4, separators=(',', '= '))
+
+            logger.warning(f"{now} - {self.name} - Multipath tracker params:\n {params}")
 
         self.multipath_trackers = defaultdict()
         self.lock = RLock()

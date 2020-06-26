@@ -27,8 +27,8 @@ class RerouteManager(BaseDefenseManager):
     def __init__(self, sdn_controller_app, reroute_enabled=True,
                  socket_file=SOCKET_FILE, ids_ip=IDS_IP, gateway_ip=GATEWAY_IP):
 
-        now = int(datetime.now().timestamp())
-        report_folder = "reroute-%d" % now
+        now = datetime.now()
+        report_folder = "reroute-%d" % int(now.timestamp())
         name = "reroute_manager"
         super(RerouteManager, self).__init__(name, sdn_controller_app, reroute_enabled, report_folder)
         self.ids_ip = ids_ip
@@ -49,12 +49,21 @@ class RerouteManager(BaseDefenseManager):
         self.statistics["applied_blacklist"] = {}
         self.statistics["hit_count"] = 0
         self.statistics["reset_time"] = datetime.now().timestamp()
+
         logger.warning("............................................................................")
-        logger.warning("Reroute manager enabled:  %s" % self.enabled)
-        logger.warning("............................................................................")
-        if reroute_enabled:
+        if self.enabled:
+            logger.warning(f"{now} - {self.name} - Reroute manager is enabled")
+        else:
+            logger.warning(f"{now} - {self.name} - Reroute manager is initiated but not enabled")
+
+        if self.enabled:
+            logger.warning(f"{now} - {self.name} - IDS unix socket file: {self.socket_file}")
+            logger.warning(f"{now} - {self.name} - IDS IP address: {self.ids_ip}")
+            logger.warning(f"{now} - {self.name} - Gateway IP address: {self.gateway_ip}")
+
             hub.spawn(self.listen_unix_stream, self.socket_file)
             hub.spawn(self._find_ids_and_gateway)
+        logger.warning("............................................................................")
 
     def listen_unix_stream(self, socket_file):
 
@@ -115,11 +124,11 @@ class RerouteManager(BaseDefenseManager):
                     dpid = dp_list[0]
 
                     self._send_arp_request(dpid, CONTROLLER_IP, self.ids_ip)
-                    logger.warning(f"{datetime.now()} - ARP request for {self.ids_ip}")
+                    logger.warning(f"{datetime.now()} - {self.name} - ARP request for {self.ids_ip}")
             else:
                 src_mac = self.ids_eth_address
                 self._send_arp_request(self.ids_dpid, self.ids_ip, self.gateway_ip, self.ids_port_no, src_mac)
-                logger.warning(f"{datetime.now()} - ARP request for {self.gateway_ip}")
+                logger.warning(f"{datetime.now()} - {self.name} - ARP request for {self.gateway_ip}")
             hub.sleep(1)
 
     def new_packet_detected(self, msg, dpid, in_port, src_ip, dst_ip, eth_src, eth_dst):

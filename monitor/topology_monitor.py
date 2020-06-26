@@ -15,7 +15,7 @@ class TopologyMonitor(object):
 
     def __init__(self, *args, **kwargs):
         super(TopologyMonitor, self).__init__(*args, **kwargs)
-
+        self.name = "topology_monitor"
         self.topology = nx.DiGraph()
         self.datapath_list = defaultdict()
         self.no_flood_ports = None
@@ -85,7 +85,7 @@ class TopologyMonitor(object):
                     self.no_flood_ports[s2] = set()
                 self.no_flood_ports[s2].add(e2)
 
-            logger.warning(f"{datetime.now()} - Spanning tree is updated: %s" % dict(self.no_flood_ports))
+            logger.warning(f"{datetime.now()} - {self.name} - Spanning tree is updated: %s" % dict(self.no_flood_ports))
 
     def switch_enter_handler(self, ev):
         if logger.isEnabledFor(level=logging.INFO):

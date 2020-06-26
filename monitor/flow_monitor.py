@@ -16,6 +16,9 @@ class FlowMonitor(object):
 
     def __init__(self, report_folder, watch_generated_flows, *args, **kwargs):
         super(FlowMonitor, self).__init__(*args, **kwargs)
+
+        self.name = "flow_monitor"
+
         self.flows = defaultdict()
 
         self.statistics = defaultdict()
@@ -27,7 +30,7 @@ class FlowMonitor(object):
 
         self.reset_statistics()
         if watch_generated_flows:
-            logger.warning("Generated_flows will be watched !!! All flows statistics will be saved.")
+            logger.warning(f"{datetime.now()} - {self.name} - Generated_flows will be watched !!! All flows statistics will be saved.")
 
     def get_status(self):
         status = {"watch_generated_flows": self.watch_generated_flows,

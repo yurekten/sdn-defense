@@ -9,24 +9,27 @@ from utils.common_utils import is_valid_remote_ip
 
 CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
-
+DEFAULT_IP_WHITELIST_FILE = os.path.join(CURRENT_PATH, "ip_whitelist.txt")
+DEFAULT_IP_BLACKLIST_FILE = os.path.join(CURRENT_PATH, "ip_blacklist.txt")
 
 class BlacklistManager(BaseDefenseManager):
 
     def __init__(self, sdn_controller_app, blacklist_enabled=True, max_blacklist_item_count=30000,
-                 blacklist_idle_timeout=10, ip_whitelist_file="ip_whitelist.txt", ip_blacklist_file="ip_blacklist.txt"):
+                 blacklist_idle_timeout=10,
+                 ip_whitelist_file=DEFAULT_IP_WHITELIST_FILE, ip_blacklist_file=DEFAULT_IP_BLACKLIST_FILE):
         """
         :param sdn_controller_app: Ryu Controller App
         :param blacklist_enabled: If True, blacklist is enabled
         """
-        now = int(datetime.now().timestamp())
-        report_folder = "blacklist-%d" % now
+        now = datetime.now()
+        report_folder = "blacklist-%d" % int(now.timestamp())
         name = "blacklist_manager"
         super(BlacklistManager, self).__init__(name, sdn_controller_app, blacklist_enabled, report_folder)
 
         self.max_blacklist_item_count = max_blacklist_item_count
         self.ip_whitelist_file = ip_whitelist_file
         self.ip_blacklist_file = ip_blacklist_file
+        self.blacklist_idle_timeout = blacklist_idle_timeout
 
         self.blacklist = {}
         self.applied_blacklist = {}
@@ -34,19 +37,24 @@ class BlacklistManager(BaseDefenseManager):
         self.statistics["applied_blacklist"] = {}
         self.statistics["hit_count"] = 0
         self.statistics["reset_time"] = datetime.now().timestamp()
-        self.blacklist_idle_timeout = blacklist_idle_timeout
 
         logger.warning("............................................................................")
-        logger.warning("SDN CONTROLLER started - blacklist enabled:  %s" % self.enabled)
-
         if self.enabled:
-            logger.warning("..... blacklist max item count  %s" % self.max_blacklist_item_count)
-            logger.warning("..... blacklist idle timeout: %s" % self.blacklist_idle_timeout)
-            logger.warning("..... report folder: %s" % self.report_folder)
+            logger.warning(f"{now} - {self.name} - Blacklist manager is enabled")
+        else:
+            logger.warning(f"{now} - {self.name} - Blacklist manager is initiated but not enabled")
 
         self.whitelist = []
         self._initialize_whitelist()
         self._initialize_blacklist()
+
+        if self.enabled:
+            logger.warning(f"{now} - {self.name} - Blacklist max item count: {self.max_blacklist_item_count}")
+            logger.warning(f"{now} - {self.name} - Blacklist idle timeout: {self.blacklist_idle_timeout}")
+            logger.warning(f"{now} - {self.name} - Blacklist report folder: {self.report_folder}")
+            logger.warning(f"{now} - {self.name} - Initial blacklist file: {self.ip_blacklist_file}")
+            logger.warning(f"{now} - {self.name} - Initial blacklist item count: {len(self.blacklist)}")
+
 
     def _initialize_whitelist(self):
         """
@@ -57,8 +65,7 @@ class BlacklistManager(BaseDefenseManager):
         4.4.4.4
         """
         if self.enabled:
-            file_path = os.path.join(CURRENT_PATH, self.ip_whitelist_file)
-            with open(file_path) as f:
+            with open(self.ip_whitelist_file) as f:
                 content = f.readlines()
 
             content = [x.strip() for x in content]
@@ -74,8 +81,7 @@ class BlacklistManager(BaseDefenseManager):
         Ip addresses that are not valid remote address or in whitelist are excuded.
         """
         if self.enabled:
-            file_path = os.path.join(CURRENT_PATH, self.ip_blacklist_file)
-            with open(file_path) as f:
+            with open(self.ip_blacklist_file) as f:
                 content = f.readlines()
 
             content = [x.strip() for x in content]
@@ -94,7 +100,6 @@ class BlacklistManager(BaseDefenseManager):
 
                     self.blacklist[ip]["url"].add(url)
 
-            logger.warning("..... current blacklist item count  %s" % len(self.blacklist))
 
     def get_status(self):
         """
