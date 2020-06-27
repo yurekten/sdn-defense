@@ -92,7 +92,7 @@ class FlowMultipathTracker(object):
     def get_status(self):
         return self.state
 
-    def get_active_path_port_for(self, datapath_id):
+    def get_output_port_for_packet(self, datapath_id):
         if self.state == FlowMultipathTracker.NOT_ACTIVE:
             # hub.spawn(self._time_tracking)
             hub.spawn(self._maintain_flows)

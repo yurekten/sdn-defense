@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 
 from ryu.base.app_manager import AppManager
@@ -7,7 +8,10 @@ from ryu.cmd import manager
 from configuration import CONTROLLER_PORT
 
 
+CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
+
 def main():
+    sys.path.append(CURRENT_PATH)
     sys.argv.append('--ofp-tcp-listen-port')
     sys.argv.append(str(CONTROLLER_PORT))
     sys.argv.append('--enable-debugger')

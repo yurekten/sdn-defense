@@ -1,4 +1,3 @@
-import json
 import logging
 import pathlib
 from collections import defaultdict
@@ -7,7 +6,8 @@ from threading import RLock
 
 import networkx as nx
 
-from defense_managers.base_manager import BaseDefenseManager, ProcessResult
+from defense_managers.base_manager import BaseDefenseManager
+from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse
 from defense_managers.multipath.flow_multipath_tracker import FlowMultipathTracker
 
 CURRENT_PATH = pathlib.Path().absolute()
@@ -51,9 +51,8 @@ class MultipathManager(BaseDefenseManager):
             logger.warning(f"{now} - {self.name} - Minimum period: {self.min_packet_in_period}")
             logger.warning(f"{now} - {self.name} - Start if min_packet count in period: {self.min_packet_in_period}")
 
-            params = json.dumps(self.multipath_tracker_params, indent=4, separators=(',', '= '))
-
-            logger.warning(f"{now} - {self.name} - Multipath tracker params:\n {params}")
+            for key, value in self.multipath_tracker_params.items():
+                logger.warning(f"{now} - {self.name} - {key}: {value}")
 
         self.multipath_trackers = defaultdict()
         self.lock = RLock()
@@ -90,7 +89,7 @@ class MultipathManager(BaseDefenseManager):
                                                      h1[1], h2[0], h2[1], h1[2], h2[2],
                                                      **self.multipath_tracker_params)
             self.multipath_trackers[multipath_tracker.flow_info] = multipath_tracker
-            multipath_tracker.get_active_path_port_for(dp_list[h1[0]])
+            multipath_tracker.get_output_port_for_packet(dp_list[h1[0]])
             if logger.isEnabledFor(level=logging.WARNING):
                 logger.warning(
                     f"{datetime.now()} - Initiate multipath tracker {multipath_tracker.flow_info} at {datetime.now()}")
@@ -108,38 +107,25 @@ class MultipathManager(BaseDefenseManager):
                     logger.warning(
                         f"{datetime.now()} - Terminate multipath tracker {flow.flow_info}  at {datetime.now()}")
 
-    def get_active_path_port_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
+    def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         if not self.enabled:
             return None
         if (src, first_port, dst, last_port, ip_src, ip_dst) in self.multipath_trackers:
             multipath_tracker = self.multipath_trackers[(src, first_port, dst, last_port, ip_src, ip_dst)]
-            output_port = multipath_tracker.get_active_path_port_for(current_dpid)
+            output_port = multipath_tracker.get_output_port_for_packet(current_dpid)
             return output_port
         return None
 
-    def new_packet_detected(self, msg, dpid, in_port, src_ip, dst_ip, eth_src, eth_dst):
-        return ProcessResult.IGNORE
-
-    def initiate_flow_manager_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        out_port = self.get_active_path_port_for(src, first_port, dst, last_port, ip_src, ip_dst, current_dpid)
-        if out_port is None:
-            return None
-        parser = self.datapath_list[current_dpid].ofproto_parser
-        ofproto = self.datapath_list[current_dpid].ofproto
-        actions = [parser.OFPActionOutput(out_port)]
-
-        action_instructions = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
-        return action_instructions
-
-    def can_manage_flow(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        if not self.enabled:
-            return False
-        else:
-            return True
-
-    def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_port):
+    def before_adding_default_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
         if not self.enabled:
             return
+
+        src_ip = request_ctx.params.src_ip
+        dst_ip = request_ctx.params.dst_ip
+        dpid = request_ctx.params.src_dpid
+        in_port = request_ctx.params.in_port
+        out_ports = request_ctx.params.out_port
+
         if self.enabled and src_ip in self.host_ip_map and dst_ip in self.host_ip_map:
 
             src = self.host_ip_map[src_ip][2]
@@ -154,20 +140,51 @@ class MultipathManager(BaseDefenseManager):
                 if tracker.get_status() == FlowMultipathTracker.ACTIVE:
                     return
 
-            ofproto = datapath.ofproto
-            dpid = datapath.id
+            ofproto = self.datapath_list[dpid].ofproto
             priority = 3
             flags = ofproto.OFPFF_SEND_FLOW_REM
             hard_timeout = self.activation_delay
             idle_timeout = 0
-            self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_port, priority, flags,
+            self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
                                                              hard_timeout, idle_timeout, self, self)
-            self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_port, priority, flags,
+            self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
                                                              hard_timeout + 1, idle_timeout, self, self)
-            self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, out_port, in_port, priority, flags,
+            self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
                                                              hard_timeout, idle_timeout, self, self)
-            self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, out_port, in_port, priority, flags,
+            self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
                                                              hard_timeout + 1, idle_timeout, self, self)
+
+    # def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_ports):
+    #     if not self.enabled:
+    #         return
+    #     if self.enabled and src_ip in self.host_ip_map and dst_ip in self.host_ip_map:
+    #
+    #         src = self.host_ip_map[src_ip][2]
+    #         dst = self.host_ip_map[dst_ip][2]
+    #         h1 = self.hosts[src]
+    #         h2 = self.hosts[dst]
+    #         # same switch, ignore
+    #         if h1[0] == h2[0]:
+    #             return
+    #         if (h1[0], h1[1], h2[0], h2[1], h1[2], h2[2]) in self.multipath_trackers:
+    #             tracker = self.multipath_trackers[(h1[0], h1[1], h2[0], h2[1], h1[2], h2[2])]
+    #             if tracker.get_status() == FlowMultipathTracker.ACTIVE:
+    #                 return
+    #
+    #         ofproto = datapath.ofproto
+    #         dpid = datapath.id
+    #         priority = 3
+    #         flags = ofproto.OFPFF_SEND_FLOW_REM
+    #         hard_timeout = self.activation_delay
+    #         idle_timeout = 0
+    #         self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
+    #                                                          hard_timeout, idle_timeout, self, self)
+    #         self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
+    #                                                          hard_timeout + 1, idle_timeout, self, self)
+    #         self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
+    #                                                          hard_timeout, idle_timeout, self, self)
+    #         self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
+    #                                                          hard_timeout + 1, idle_timeout, self, self)
 
     def flow_removed(self, msg):
         if not self.enabled:

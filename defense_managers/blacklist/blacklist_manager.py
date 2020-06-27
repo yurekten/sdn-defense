@@ -4,13 +4,16 @@ from datetime import datetime
 
 from ryu.lib.packet import ether_types
 
-from defense_managers.base_manager import BaseDefenseManager, ProcessResult
+from defense_managers.base_manager import BaseDefenseManager
+from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse, \
+    ManagerResponse, AddFlowAction
 from utils.common_utils import is_valid_remote_ip
 
 CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
 DEFAULT_IP_WHITELIST_FILE = os.path.join(CURRENT_PATH, "ip_whitelist.txt")
 DEFAULT_IP_BLACKLIST_FILE = os.path.join(CURRENT_PATH, "ip_blacklist.txt")
+
 
 class BlacklistManager(BaseDefenseManager):
 
@@ -54,7 +57,6 @@ class BlacklistManager(BaseDefenseManager):
             logger.warning(f"{now} - {self.name} - Blacklist report folder: {self.report_folder}")
             logger.warning(f"{now} - {self.name} - Initial blacklist file: {self.ip_blacklist_file}")
             logger.warning(f"{now} - {self.name} - Initial blacklist item count: {len(self.blacklist)}")
-
 
     def _initialize_whitelist(self):
         """
@@ -100,7 +102,6 @@ class BlacklistManager(BaseDefenseManager):
 
                     self.blacklist[ip]["url"].add(url)
 
-
     def get_status(self):
         """
         :return: manager status dictianary
@@ -115,10 +116,17 @@ class BlacklistManager(BaseDefenseManager):
                 "reset_time": datetime.fromtimestamp(self.statistics["reset_time"])
 
                 }
+    def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
+        pass
 
-    def new_packet_detected(self, msg, dpid, in_port, src_ip, dst_ip, eth_src, eth_dst):
+    def on_new_packet_detected(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
         if not self.enabled:
-            return ProcessResult.IGNORE
+            return
+        src_ip = request_ctx.params.src_ip
+        dst_ip = request_ctx.params.dst_ip
+        dpid = request_ctx.params.src_dpid
+        in_port = request_ctx.params.in_port
+
         if src_ip in self.blacklist or dst_ip in self.blacklist:
             parser = self.datapath_list[dpid].ofproto_parser
 
@@ -146,21 +154,19 @@ class BlacklistManager(BaseDefenseManager):
 
             if len(matches) > 0:
                 self.statistics["hit_count"] = self.statistics["hit_count"] + 1
-                actions = None
-
+                manager_response = ManagerResponse(self, ProcessResult.FINISH)
                 actions = []
                 for match in matches:
-                    flow_id = self.sdn_controller_app.add_flow(dp, priority,
-                                                               match, actions,
-                                                               hard_timeout=0,
-                                                               idle_timeout=self.blacklist_idle_timeout,
-                                                               flags=ofproto.OFPFF_SEND_FLOW_REM,
-                                                               caller=self, manager=self)
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(f'Blacklist {match} is inserted into {dpid} with id:{flow_id}')
+                    response = AddFlowAction(dp, priority, match, actions, hard_timeout=0,
+                                               idle_timeout=self.blacklist_idle_timeout,
+                                               flags=ofproto.OFPFF_SEND_FLOW_REM,
+                                               caller=self, manager=self)
+                    manager_response.action_list.append(response)
 
-            return ProcessResult.FINISH
-        return ProcessResult.CONTINUE
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f'Blacklist {match} will be inserted into {dpid}')
+
+                response_ctx.add_response(self, manager_response)
 
     def _add_ip_to_blacklist(self, dpid, ip):
         if ip not in self.applied_blacklist:
@@ -207,37 +213,6 @@ class BlacklistManager(BaseDefenseManager):
 
                     logger.warning(
                         f"{datetime.now()} - {self.name} - {ipv4_dst} in {dpid} is removed from applied blacklist.")
-
-    def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_port):
-        if not self.enabled:
-            return
-
-    def can_manage_flow(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        if not self.enabled:
-            return False
-
-        if ip_src in self.blacklist or ip_dst in self.blacklist:
-            return True
-        else:
-            return False
-
-    def get_active_path_port_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        if not self.enabled:
-            return None
-
-        if ip_src in self.blacklist:
-            return None
-
-        return None
-
-    def initiate_flow_manager_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        if ip_src in self.blacklist or ip_dst in self.blacklist:
-            parser = self.datapath_list[current_dpid].ofproto_parser
-            ofproto = self.datapath_list[current_dpid].ofproto
-            action_instructions = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, [])]
-
-            return action_instructions
-        return None
 
     def reset_statistics(self):
 

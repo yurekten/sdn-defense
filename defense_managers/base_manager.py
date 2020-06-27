@@ -1,15 +1,12 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from datetime import datetime
-from enum import Enum
 
+from defense_managers.event_parameters import SDNControllerRequest, SDNControllerResponse
 from utils.file_utils import save_dict_to_file
 
 
-class ProcessResult(Enum):
-    IGNORE = 0,
-    CONTINUE = 1,
-    FINISH = 2,
+
 
 
 class BaseDefenseManager(ABC):
@@ -41,27 +38,13 @@ class BaseDefenseManager(ABC):
         pass
 
     @abstractmethod
-    def can_manage_flow(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
+    def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         pass
 
-    @abstractmethod
-    def get_active_path_port_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
+    def on_new_packet_detected(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
         pass
 
-    @abstractmethod
-    def new_packet_detected(self, msg, dpid, in_port, src_ip, dst_ip, eth_src, eth_dst):
-        pass
-
-    @abstractmethod
-    def initiate_flow_manager_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        pass
-
-    @abstractmethod
-    def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_port):
-        pass
-
-    def flow_will_be_added(self, datapath, priority, match, actions, buffer_id, hard_timeout, flags, cookie,
-                           table_id, idle_timeout, caller, manager):
+    def before_adding_default_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
         pass
 
     def flow_is_deleted(self, dpid, flow_id, caller):

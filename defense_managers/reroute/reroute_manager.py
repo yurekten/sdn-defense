@@ -10,7 +10,8 @@ import networkx as nx
 from ryu.lib import hub
 
 from configuration import CONTROLLER_IP
-from defense_managers.base_manager import BaseDefenseManager, ProcessResult
+from defense_managers.base_manager import BaseDefenseManager
+from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse
 from utils.openflow_utils import build_arp_request
 
 CURRENT_PATH = pathlib.Path().absolute()
@@ -131,35 +132,11 @@ class RerouteManager(BaseDefenseManager):
                 logger.warning(f"{datetime.now()} - {self.name} - ARP request for {self.gateway_ip}")
             hub.sleep(1)
 
-    def new_packet_detected(self, msg, dpid, in_port, src_ip, dst_ip, eth_src, eth_dst):
-        if not self.enabled:
-            return ProcessResult.IGNORE
-        if self.ids_dpid is None or self.gateway_dpid is None:
-            if src_ip == IDS_IP:
-                if self.ids_dpid is None:
-                    self.ids_dpid = dpid
-                    self.ids_port_no = in_port
-                    self.ids_eth_address = eth_src
-                    logger.warning(
-                        f'{datetime.now()} - {self.name} - IDS is connected to datapath {dpid}, port {in_port}')
+    def on_new_packet_detected(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
+        pass
 
-            if src_ip == GATEWAY_IP:
-                if self.gateway_dpid is None:
-                    self.gateway_dpid = dpid
-                    self.gateway_port_no = in_port
-                    self.gateway_eth_address = eth_src
-                    logger.warning(
-                        f'{datetime.now()} - {self.name} - Gateway is connected to datapath {dpid}, port {in_port}')
-
-            if self.ids_dpid is not None and self.gateway_dpid is not None:
-                path = nx.shortest_path(self.topology, source=self.gateway_dpid, target=self.ids_dpid)
-                nodes = []
-                for node in path:
-                    nodes.append(node)
-                self.gateway_ids_path = nodes
-                logger.warning(f'{datetime.now()} - {self.name} - Path from gateway to ids {nodes}')
-
-        return ProcessResult.IGNORE
+    def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
+        pass
 
     def _send_arp_request(self, dpid, src_ip, dst_ip, in_port=None, src_mac=None):
 
@@ -185,26 +162,6 @@ class RerouteManager(BaseDefenseManager):
         if not self.enabled:
             return
 
-    def flow_will_be_added(self, datapath, priority, match, actions, buffer_id, hard_timeout, flags, cookie,
-                           table_id, idle_timeout, caller, manager):
-        logger.debug(f"Flow will be added {datapath.id} {priority} {match} {actions}")
-
-    def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_port):
-        assert self.enabled
-
-    def can_manage_flow(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        assert self.enabled
-
-        return False
-
-    def get_active_path_port_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        if not self.enabled:
-            return None
-
-        return None
-
-    def initiate_flow_manager_for(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
-        return None
 
     def reset_statistics(self):
         super(RerouteManager, self).reset_statistics()
