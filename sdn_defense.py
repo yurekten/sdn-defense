@@ -122,7 +122,7 @@ class SDNDefenseApp(app_manager.RyuApp):
         datapath.send_msg(mod)
 
     def add_flow(self, datapath, priority, match, actions, buffer_id=None, hard_timeout=0, flags=0, cookie=0,
-                 table_id=0, idle_timeout=0, caller=None, manager=None):
+                 table_id=0, idle_timeout=0, caller=None, manager=None, related_group_id=None):
         if manager is None:
             manager = self
         if caller is None:
@@ -150,7 +150,7 @@ class SDNDefenseApp(app_manager.RyuApp):
         if datapath.id not in flows:
             flows[datapath.id] = defaultdict()
 
-        flows[datapath.id][flow_id] = (mod, caller, manager)
+        flows[datapath.id][flow_id] = (mod, caller, manager, related_group_id)
 
         return flow_id
 
@@ -411,7 +411,7 @@ class SDNDefenseApp(app_manager.RyuApp):
         goto_group_actions = [parser.OFPActionGroup(group_id)]
         flow_id = self.add_flow(datapath=datapath, priority=priority, match=match, actions=goto_group_actions,
                                 buffer_id=buffer_id, hard_timeout=hard_timeout, idle_timeout=idle_timeout,
-                                flags=flags, caller=caller, manager=manager)
+                                flags=flags, caller=caller, manager=manager, related_group_id=group_id)
         return flow_id
 
     def _process_event_responses(self, request_ctx, response_ctx) -> bool:

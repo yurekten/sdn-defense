@@ -72,11 +72,17 @@ class FlowMonitor(object):
     def flow_removed_handler(self, ev):
         msg = ev.msg
         dp = msg.datapath
-
+        parser = dp.ofproto_parser
+        ofproto = dp.ofproto
         if dp.id in self.flows:
             if msg.cookie in self.flows[dp.id]:
-                manager = self.flows[dp.id][msg.cookie]
-                manager[1].flow_removed(msg)
+                info = self.flows[dp.id][msg.cookie]
+                info[1].flow_removed(msg)
+                if info[3] is not None:
+                    delete_group = parser.OFPGroupMod(datapath=dp, command=ofproto.OFPGC_DELETE,
+                                                       group_id=info[3])
+                    dp.send_msg(delete_group)
+
                 del self.flows[dp.id][msg.cookie]
 
     def flow_removed(self, msg):
