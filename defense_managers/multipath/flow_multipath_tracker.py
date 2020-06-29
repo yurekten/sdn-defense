@@ -16,7 +16,7 @@ CURRENT_PATH = pathlib.Path().absolute()
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
-logger.setLevel(level=logging.WARNING)
+logger.setLevel(level=logging.DEBUG)
 REFERENCE_BW = 10000000
 
 
@@ -30,7 +30,7 @@ class FlowMultipathTracker(object):
 
     def __init__(self, caller_app, flow_coordinator, dp_list, src, first_port, dst, last_port, ip_src, ip_dst,
                  max_random_paths=100, lowest_flow_priority=30000,
-                 max_installed_path_count=2, max_time_period_in_second=2, forward_with_random_ip=True,
+                 max_installed_path_count=2, max_time_period_in_second=4, forward_with_random_ip=True,
                  random_ip_subnet="10.93.0.0", random_ip_for_each_hop=True):
 
         self.caller_app = caller_app
@@ -230,6 +230,7 @@ class FlowMultipathTracker(object):
         length = -1
 
         while self.state != FlowMultipathTracker.DEAD:
+            logger.warning(f'{datetime.now()} - {self.flow_info} state is {FlowMultipathTracker.STATES[self.state]}.')
             if self.state == FlowMultipathTracker.NOT_ACTIVE:
                 self._reset_tracker()
                 self._calculate_optimal_paths()
@@ -260,7 +261,7 @@ class FlowMultipathTracker(object):
                         rule_id = installed_time[1]
                         ip_flows = self.statistics["rule_set"][rule_id]["datapath_list"][self.src]["ip_flow"]
                         flow_id = list(ip_flows.keys())[0]
-                        self.flow_coordinator.delete_flow(self.src, flow_id, self)
+                        #self.flow_coordinator.delete_flow(self.src, flow_id, self)
 
                         current_path_index = self.path_choices[start_index]
                         self.active_path = self.paths_with_ports[current_path_index]
@@ -274,8 +275,10 @@ class FlowMultipathTracker(object):
                 self._set_state(FlowMultipathTracker.DEAD)
                 self._reset_tracker()
                 self.statistics["end_time"] = datetime.now().timestamp()
-
+            logger.warning(f'{datetime.now()} - {self.flow_info} is sleeping.')
             hub.sleep(self.max_time_period_in_second)
+
+        logger.warning(f'{datetime.now()} - {self.flow_info} is finished.')
 
     @staticmethod
     def get_virtual_queue_size(array_length, start_index, next_index):
@@ -296,11 +299,11 @@ class FlowMultipathTracker(object):
     def _create_flow_rule(self, current_index, ):
         current_path_index = self.path_choices[current_index]
 
-        priority = self.lowest_flow_priority - current_index
+        priority = self.lowest_flow_priority + current_index
         timeout = self.max_time_period_in_second
 
         selected_path = self.paths_with_ports[current_path_index]
-        rule_set_id = self._create_flow_rules(selected_path, priority, idle_timeout=1)
+        rule_set_id = self._create_flow_rules(selected_path, priority, idle_timeout=10)
 
         if logger.isEnabledFor(logging.WARNING):
             now = datetime.now()

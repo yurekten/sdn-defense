@@ -20,7 +20,7 @@ class RequestParams(object):
 class PacketParams(RequestParams):
 
     def __init__(self, src_dpid=None, in_port=None, out_port=None, src_ip=None, dst_ip=None,
-                 src_eth=None, dst_eth=None, target_dpid=None, target_dpid_out_port=None):
+                 src_eth=None, dst_eth=None, target_dpid=None, target_dpid_out_port=None, default_match=None):
 
         super(PacketParams, self).__init__()
         self.src_dpid = src_dpid
@@ -33,6 +33,8 @@ class PacketParams(RequestParams):
         self.dst_eth = dst_eth
         self.target_dpid = target_dpid
         self.target_dpid_out_port = target_dpid_out_port
+
+        self.default_match = default_match
 
 
 class SDNControllerRequest(object):

@@ -178,7 +178,7 @@ class BlacklistManager(BaseDefenseManager):
             self.statistics["applied_blacklist"][ip][dpid]["first_created_time"] = datetime.now().timestamp()
             self.statistics["applied_blacklist"][ip][dpid]["packet_count"] = 0
             self.statistics["applied_blacklist"][ip][dpid]["duration_sec"] = 0
-            self.statistics["applied_blacklist"][ip]["last_delete_time"] = None
+            self.statistics["applied_blacklist"][ip][dpid]["last_delete_time"] = None
 
         if dpid not in self.applied_blacklist[ip]:
             self.applied_blacklist[ip].append(dpid)

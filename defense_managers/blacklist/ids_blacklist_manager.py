@@ -106,7 +106,7 @@ class IDSBlacklistManager(BaseDefenseManager):
                     json_data = json.loads(d)
                     result_list.append(json_data)
         except Exception as e:
-            print(e)
+            logger.warning(e)
             return None
         return result_list
 
@@ -169,8 +169,19 @@ class IDSBlacklistManager(BaseDefenseManager):
                 self.gateway_ids_path = nodes
                 logger.warning(f'{datetime.now()} - {self.name} - Path from gateway to ids {nodes}')
 
+        self._send_to_ids_port(request_ctx, response_ctx)
+
+
+    def _send_to_ids_port(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
+
+        src_ip = request_ctx.params.src_ip
+        dst_ip = request_ctx.params.dst_ip
+        dpid = request_ctx.params.src_dpid
+        in_port = request_ctx.params.in_port
+        eth_src = request_ctx.params.src_eth
+
         if self.ids_dpid is not None and self.gateway_dpid is not None:
-            if self.gateway_dpid == dpid:
+            if self.gateway_dpid == dpid and self.ids_port_no != in_port:
                 manager_response = ManagerResponse(self, ProcessResult.CONTINUE)
                 parser = self.datapath_list[dpid].ofproto_parser
 
@@ -180,7 +191,7 @@ class IDSBlacklistManager(BaseDefenseManager):
                 match = None
                 actions = [parser.OFPActionOutput(self.ids_port_no)]
                 response = AddFlowAction(dp, priority, match, actions, hard_timeout=0,
-                                         idle_timeout=0,
+                                         idle_timeout=10,
                                          flags=ofproto.OFPFF_SEND_FLOW_REM,
                                          caller=self, manager=self)
                 manager_response.action_list.append(response)
@@ -190,6 +201,8 @@ class IDSBlacklistManager(BaseDefenseManager):
 
                 response_ctx.add_response(self, manager_response)
 
+    def before_adding_default_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
+        self._send_to_ids_port(request_ctx, response_ctx)
 
     def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         pass
@@ -211,9 +224,6 @@ class IDSBlacklistManager(BaseDefenseManager):
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath, buffer_id, in_port, actions, arp.data)
         datapath.send_msg(out)
-
-    def _add_ip_to_blacklist(self, dpid, ip):
-        pass
 
     def flow_removed(self, msg):
         if not self.enabled:

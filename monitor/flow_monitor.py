@@ -77,19 +77,22 @@ class FlowMonitor(object):
         if dp.id in self.flows:
             if msg.cookie in self.flows[dp.id]:
                 info = self.flows[dp.id][msg.cookie]
-                info[1].flow_removed(msg)
-                if info[3] is not None:
+                #info[1].flow_removed(msg)
+                callers = info["caller"]
+                if callers:
+                    for caller in callers:
+                        caller.flow_removed(msg)
+                group_id = info["group_id"]
+                if group_id is not None:
                     delete_group = parser.OFPGroupMod(datapath=dp, command=ofproto.OFPGC_DELETE,
-                                                       group_id=info[3])
+                                                       group_id=group_id)
                     dp.send_msg(delete_group)
 
                 del self.flows[dp.id][msg.cookie]
 
-    def flow_removed(self, msg):
-
-        if self.watch_generated_flows:
-            if msg.datapath.id in self.statistics["flows"]:
-                if msg.cookie in self.statistics["flows"][msg.datapath.id]:
-                    self.statistics["removed-flow-count"] = self.statistics["removed-flow-count"] + 1
-                    stats = self.statistics["flows"][msg.datapath.id][msg.cookie]
-                    copy_remove_msg_data(msg, stats)
+        #if self.watch_generated_flows:
+        if msg.datapath.id in self.statistics["flows"]:
+            if msg.cookie in self.statistics["flows"][msg.datapath.id]:
+                self.statistics["removed-flow-count"] = self.statistics["removed-flow-count"] + 1
+                stats = self.statistics["flows"][msg.datapath.id][msg.cookie]
+                copy_remove_msg_data(msg, stats)
