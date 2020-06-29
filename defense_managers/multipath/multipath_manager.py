@@ -1,4 +1,5 @@
 import logging
+import os
 import pathlib
 from collections import defaultdict
 from datetime import datetime
@@ -10,11 +11,12 @@ from defense_managers.base_manager import BaseDefenseManager
 from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse
 from defense_managers.multipath.flow_multipath_tracker import FlowMultipathTracker
 
-CURRENT_PATH = pathlib.Path().absolute()
+CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.WARNING)
 REFERENCE_BW = 10000000
 
+DEFAULT_TARGET_IP_LIST_FILE = os.path.join(CURRENT_PATH, "target_ip_list.txt")
 
 class MultipathManager(BaseDefenseManager):
 
@@ -35,7 +37,7 @@ class MultipathManager(BaseDefenseManager):
             'random_ip_subnet': "10.93.0.0",  # random ip subnet, default mask is 255.255.0.0
             'max_random_paths': 200,  # maximum random paths used in multipath trackers
             'max_installed_path_count': 2,  # maximum flow count installed in switch for each path
-            'max_time_period_in_second': 4,  # random path expire time in seconds.
+            'max_time_period_in_second': 2,  # random path expire time in seconds.
             'lowest_flow_priority': 20000,  # minimum flow priority in random path flows
         }
 
@@ -53,10 +55,29 @@ class MultipathManager(BaseDefenseManager):
 
             for key, value in self.multipath_tracker_params.items():
                 logger.warning(f"{now} - {self.name} - {key}: {value}")
-
+        self.watch_list = set()
         self.multipath_trackers = defaultdict()
         self.lock = RLock()
         self.all_possible_paths = {}
+        self.target_ip_list_file = DEFAULT_TARGET_IP_LIST_FILE
+        self.target_ip_list = {}
+        self._initialize_target_ip_list()
+
+    def _initialize_target_ip_list(self):
+        """
+        Reads file from self.ip_whitelist_file to exclude from blacklist.
+        Lines of ip_whitelist_file are like that:
+        8.8.8.8
+        1.1.1.1
+        4.4.4.4
+        """
+        if self.enabled:
+            with open(self.target_ip_list_file) as f:
+                content = f.readlines()
+
+            content = [x.strip() for x in content]
+            for item in content:
+                self.target_ip_list[item.strip()] = {}
 
     def get_status(self):
         return {"multipath_enabled": self.enabled,
@@ -125,34 +146,46 @@ class MultipathManager(BaseDefenseManager):
         dpid = request_ctx.params.src_dpid
         in_port = request_ctx.params.in_port
         out_ports = request_ctx.params.out_port
+        if src_ip in self.target_ip_list or dst_ip in self.target_ip_list:
 
-        if self.enabled and src_ip in self.host_ip_map and dst_ip in self.host_ip_map:
+            if src_ip in self.host_ip_map and dst_ip in self.host_ip_map:
 
-            src = self.host_ip_map[src_ip][2]
-            dst = self.host_ip_map[dst_ip][2]
-            h1 = self.hosts[src]
-            h2 = self.hosts[dst]
-            # same switch, ignore
-            if h1[0] == h2[0]:
-                return
-            if (h1[0], h1[1], h2[0], h2[1], h1[2], h2[2]) in self.multipath_trackers:
-                tracker = self.multipath_trackers[(h1[0], h1[1], h2[0], h2[1], h1[2], h2[2])]
-                if tracker.get_status() == FlowMultipathTracker.ACTIVE:
+                src = self.host_ip_map[src_ip][2]
+                dst = self.host_ip_map[dst_ip][2]
+                h1 = self.hosts[src]
+                h2 = self.hosts[dst]
+                # same switch, ignore
+                if h1[0] == h2[0]:
+                    return
+                flow_tuple = (h1[0], h1[1], h2[0], h2[1], h1[2], h2[2])
+                if flow_tuple in self.multipath_trackers:
+                    tracker = self.multipath_trackers[flow_tuple]
+                    if tracker.get_status() == FlowMultipathTracker.ACTIVE or tracker.get_status() == FlowMultipathTracker.INITIATED:
+                        return
+
+                if flow_tuple in self.watch_list:
                     return
 
-            ofproto = self.datapath_list[dpid].ofproto
-            priority = 3
-            flags = ofproto.OFPFF_SEND_FLOW_REM
-            hard_timeout = self.activation_delay
-            idle_timeout = 0
-            self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
-                                                             hard_timeout, idle_timeout, self, self)
-            self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
-                                                             hard_timeout + 1, idle_timeout, self, self)
-            self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
-                                                             hard_timeout, idle_timeout, self, self)
-            self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
-                                                             hard_timeout + 1, idle_timeout, self, self)
+                ofproto = self.datapath_list[dpid].ofproto
+                priority = 3
+                flags = ofproto.OFPFF_SEND_FLOW_REM
+                hard_timeout = self.activation_delay
+                idle_timeout = 0
+
+
+                flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
+                                                                 hard_timeout, idle_timeout, self, self)
+                self.watch_list.add(flow_id)
+                # flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
+                #                                                  hard_timeout + 1, idle_timeout, self, self)
+
+                flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
+                                                                 hard_timeout, idle_timeout, self, self)
+                self.watch_list.add(flow_id)
+                # flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
+                #                                                  hard_timeout + 1, idle_timeout, self, self)
+                # self.watch_list.add(flow_id)
+
 
     # def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_ports):
     #     if not self.enabled:
@@ -189,25 +222,24 @@ class MultipathManager(BaseDefenseManager):
     def flow_removed(self, msg):
         if not self.enabled:
             return
-        ofproto = msg.datapath.ofproto
-        if self.enabled:
-            if msg.reason == ofproto.OFPRR_HARD_TIMEOUT:
-                ipv4_src = None
-                ipv4_dst = None
-                if "ipv4_src" in msg.match:
-                    ipv4_src = msg.match["ipv4_src"]
-                if "ipv4_dst" in msg.match:
-                    ipv4_dst = msg.match["ipv4_dst"]
+        if self.enabled and msg.cookie in self.watch_list:
+            ipv4_src = None
+            ipv4_dst = None
+            if "ipv4_src" in msg.match:
+                ipv4_src = msg.match["ipv4_src"]
+            if "ipv4_dst" in msg.match:
+                ipv4_dst = msg.match["ipv4_dst"]
 
-                src = self.host_ip_map[ipv4_src][2]
-                dst = self.host_ip_map[ipv4_dst][2]
-                h1 = self.hosts[src]
-                h2 = self.hosts[dst]
-                if ipv4_src is not None and ipv4_dst is not None:
-                    if (h1[0], h1[1], h2[0], h2[1], h1[2], h2[2]) in self.multipath_trackers:
-                        return
-                    if msg.packet_count > self.min_packet_in_period:
-                        self._start_multipath_tracker(ipv4_src, ipv4_dst)
+            src = self.host_ip_map[ipv4_src][2]
+            dst = self.host_ip_map[ipv4_dst][2]
+            h1 = self.hosts[src]
+            h2 = self.hosts[dst]
+            if ipv4_src is not None and ipv4_dst is not None:
+                if (h1[0], h1[1], h2[0], h2[1], h1[2], h2[2]) in self.multipath_trackers:
+                    return
+                if msg.packet_count > self.min_packet_in_period:
+                    self._start_multipath_tracker(ipv4_src, ipv4_dst)
+            self.watch_list.remove(msg.cookie)
 
     # not used not, may be soon
     def _request_flow_packet_count(self, in_port, dst, src, datapath_id):

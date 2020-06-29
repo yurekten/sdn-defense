@@ -261,7 +261,7 @@ class FlowMultipathTracker(object):
                         rule_id = installed_time[1]
                         ip_flows = self.statistics["rule_set"][rule_id]["datapath_list"][self.src]["ip_flow"]
                         flow_id = list(ip_flows.keys())[0]
-                        self.flow_coordinator.delete_flow(self.src, flow_id, self)
+                        #self.flow_coordinator.delete_flow(self.src, flow_id, self)
 
                         current_path_index = self.path_choices[start_index]
                         self.active_path = self.paths_with_ports[current_path_index]
@@ -276,7 +276,8 @@ class FlowMultipathTracker(object):
                 self._reset_tracker()
                 self.statistics["end_time"] = datetime.now().timestamp()
             logger.debug(f'{datetime.now()} - {self.flow_info} is sleeping.')
-            hub.sleep(self.max_time_period_in_second)
+            if self.state != FlowMultipathTracker.DEAD:
+                hub.sleep(1)
 
         logger.warning(f'{datetime.now()} - {self.flow_info} is finished.')
 
@@ -299,17 +300,17 @@ class FlowMultipathTracker(object):
     def _create_flow_rule(self, current_index, ):
         current_path_index = self.path_choices[current_index]
 
-        priority = self.lowest_flow_priority - current_index
+        priority = self.lowest_flow_priority + current_index
         timeout = self.max_time_period_in_second
 
         selected_path = self.paths_with_ports[current_path_index]
-        rule_set_id = self._create_flow_rules(selected_path, priority, idle_timeout=10)
+        rule_set_id = self._create_flow_rules(selected_path, priority, idle_timeout=self.max_time_period_in_second)
 
         if logger.isEnabledFor(logging.WARNING):
             now = datetime.now()
             now_string = now.strftime("%H:%M:%S.%f")
             logger.warning(
-                f'{now} - Rule set {rule_set_id} : Path No:{current_index}(Ind:{current_path_index}, Pri:{priority}) for ({self.src}->{self.dst}) start: [{now_string}] duration: {timeout:02} sec. path: {list(selected_path.keys())}')
+                f'{now} - Rule set {rule_set_id} : Path No:{current_index:03}(Ind:{current_path_index:03}, Pri:{priority:05}) for ({self.src}->{self.dst}) start: [{now_string}] duration: {timeout:02} sec. path: {list(selected_path.keys())}')
 
         self.statistics["rule_set"][rule_set_id]["installed_path_index"] = current_path_index
         self.statistics["rule_set"][rule_set_id]["choise_index"] = current_index

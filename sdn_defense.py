@@ -158,7 +158,6 @@ class SDNDefenseApp(app_manager.RyuApp):
 
         flows[datapath.id][flow_id] = {"packet": mod, "caller": caller, "manager": manager,
                                        "group_id": related_group_id}
-
         return flow_id
 
     def _get_next_flow_cookie(self, sw_id):
@@ -311,7 +310,6 @@ class SDNDefenseApp(app_manager.RyuApp):
         if actions[0].port != ofproto.OFPP_FLOOD:
 
             self.before_adding_default_flow(request_ctx, out_port_list, actions)
-
 
         else:
 
