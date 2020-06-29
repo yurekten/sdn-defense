@@ -230,7 +230,7 @@ class FlowMultipathTracker(object):
         length = -1
 
         while self.state != FlowMultipathTracker.DEAD:
-            logger.warning(f'{datetime.now()} - {self.flow_info} state is {FlowMultipathTracker.STATES[self.state]}.')
+            logger.debug(f'{datetime.now()} - {self.flow_info} state is {FlowMultipathTracker.STATES[self.state]}.')
             if self.state == FlowMultipathTracker.NOT_ACTIVE:
                 self._reset_tracker()
                 self._calculate_optimal_paths()
@@ -265,7 +265,7 @@ class FlowMultipathTracker(object):
 
                         current_path_index = self.path_choices[start_index]
                         self.active_path = self.paths_with_ports[current_path_index]
-                        logger.info(f'{datetime.now()} - {self.flow_info} dp:{self.src} flow:{flow_id} is deleted.')
+                        logger.debug(f'{datetime.now()} - {self.flow_info} dp:{self.src} flow:{flow_id} is deleted.')
                         del installed_times[index]
                     else:
                         break
@@ -275,7 +275,7 @@ class FlowMultipathTracker(object):
                 self._set_state(FlowMultipathTracker.DEAD)
                 self._reset_tracker()
                 self.statistics["end_time"] = datetime.now().timestamp()
-            logger.warning(f'{datetime.now()} - {self.flow_info} is sleeping.')
+            logger.debug(f'{datetime.now()} - {self.flow_info} is sleeping.')
             hub.sleep(self.max_time_period_in_second)
 
         logger.warning(f'{datetime.now()} - {self.flow_info} is finished.')
