@@ -10,6 +10,7 @@ from typing import List
 from ryu.lib import hub
 from ryu.lib.packet import ether_types
 
+from defense_managers.event_parameters import AddFlowAction
 from utils.common_utils import entropy
 from utils.openflow_utils import copy_remove_msg_data
 
@@ -433,13 +434,20 @@ class FlowMultipathTracker(object):
             # if node == first:
             # hub.sleep(0.1)
             # new_hard_timeout = new_hard_timeout - 1
+            new_flow = AddFlowAction(dp, priority, match, actions)
+            new_flow.hard_timeout = new_hard_timeout
+            new_flow.flags = ofproto.OFPFF_SEND_FLOW_REM
+            new_flow.idle_timeout = idle_timeout
+            new_flow.caller = self
+            new_flow.manager = self.caller_app
+            flow_id_result = self.flow_coordinator.add_managed_flow(new_flow)
 
-            flow_id_result = self.flow_coordinator.add_flow(dp, priority,
-                                                     match, actions,
-                                                     hard_timeout=new_hard_timeout,
-                                                     idle_timeout=idle_timeout,
-                                                     flags=ofproto.OFPFF_SEND_FLOW_REM,
-                                                     caller=self, manager=self.caller_app)
+            # flow_id_result = self.flow_coordinator.add_flow(dp, priority,
+            #                                          match, actions,
+            #                                          hard_timeout=new_hard_timeout,
+            #                                          idle_timeout=idle_timeout,
+            #                                          flags=ofproto.OFPFF_SEND_FLOW_REM,
+            #                                          caller=self, manager=self.caller_app)
             if not isinstance(flow_id_result, List):
                 flow_id_result = [flow_id_result]
             for flow_id in flow_id_result:

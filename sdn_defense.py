@@ -121,8 +121,42 @@ class SDNDefenseApp(app_manager.RyuApp):
                                 )
         datapath.send_msg(mod)
 
-    def add_flow(self, datapath, priority, match, actions, buffer_id=None, hard_timeout=0, flags=0, cookie=0,
-                 table_id=0, idle_timeout=0, caller=None, manager=None, related_group_id=None, request_ctx=None, response_ctx=None, inform_managers=True):
+    def _add_default_flow(self, datapath, priority, match, actions, buffer_id=None,
+                          hard_timeout=0, idle_timeout=0, flags=0, cookie=0, table_id=0):
+
+        return self._add_flow(datapath, priority, match, actions, buffer_id=buffer_id, hard_timeout=hard_timeout,
+                             flags=flags, cookie=cookie, table_id=table_id, idle_timeout=idle_timeout,
+                             caller=self, manager=self, related_group_id=None, request_ctx=None, response_ctx=None,
+                             inform_managers=False)
+
+
+    # def add_managed_flow(self, datapath, priority, match, actions, buffer_id=None, hard_timeout=0, idle_timeout=0, flags=0,
+    #              cookie=0, table_id=0, caller=None, manager=None, related_group_id=None, request_ctx=None,
+    #              response_ctx=None):
+    #
+    #     return self._add_flow(datapath, priority, match, actions, buffer_id=buffer_id, hard_timeout=hard_timeout,
+    #                          flags=flags, cookie=cookie, table_id=table_id, idle_timeout=idle_timeout,
+    #                          caller=caller, manager=manager, related_group_id=related_group_id,
+    #                          request_ctx=request_ctx, response_ctx=response_ctx,
+    #                          inform_managers=True)
+
+
+    def add_managed_flow(self, add_flow_action: AddFlowAction, request_ctx=None, response_ctx=None, inform_managers=True):
+        flow = add_flow_action
+        manager = flow.manager
+        caller = flow.caller
+        datapath = flow.datapath
+        hard_timeout = flow.hard_timeout
+        idle_timeout = flow.idle_timeout
+        cookie = flow.cookie
+        priority = flow.priority
+        match = flow.match
+        actions = flow.actions
+        buffer_id = flow.buffer_id
+        flags = flow.flags
+        table_id = flow.table_id
+        related_group_id = flow.related_group_id
+
         if manager is None:
             manager = []
         elif not isinstance(manager, List):
@@ -134,14 +168,13 @@ class SDNDefenseApp(app_manager.RyuApp):
             caller = [caller]
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
-        if idle_timeout == 0:
-            pass
+
         flow_id = cookie
         if cookie == 0:
             flow_id = self._get_next_flow_cookie(datapath.id)
 
         #manager generates it
-        if inform_managers and request_ctx is None:
+        if inform_managers :
             new_flow = AddFlowAction(datapath, priority, match, actions)
             new_flow.buffer_id = buffer_id
             new_flow.hard_timeout = hard_timeout
@@ -161,7 +194,7 @@ class SDNDefenseApp(app_manager.RyuApp):
                 for item_action in responses.action_list:
                     respose_actions.extend(item_action.actions)
 
-            #actions.extend(respose_actions)
+            actions.extend(respose_actions)
 
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         if buffer_id:
@@ -182,6 +215,25 @@ class SDNDefenseApp(app_manager.RyuApp):
         flows[datapath.id][flow_id] = {"packet": mod, "caller": caller, "manager": manager,
                                        "group_id": related_group_id}
         return flow_id
+
+
+    def _add_flow(self, datapath, priority, match, actions, buffer_id=None, hard_timeout=0, idle_timeout=0, flags=0, cookie=0,
+                 table_id=0, caller=None, manager=None, related_group_id=None, request_ctx=None, response_ctx=None, inform_managers=True):
+
+        new_flow = AddFlowAction(datapath, priority, match, actions)
+        new_flow.buffer_id = buffer_id
+        new_flow.hard_timeout = hard_timeout
+        new_flow.flags = flags
+        new_flow.cookie = cookie
+        new_flow.table_id = table_id
+        new_flow.idle_timeout = idle_timeout
+        new_flow.caller = caller
+        new_flow.manager = manager
+        new_flow.related_group_id = related_group_id
+        return self.add_managed_flow(new_flow, request_ctx, response_ctx, inform_managers)
+
+
+
 
     def on_adding_auto_generated_flow(self, request_ctx, response_ctx):
 
@@ -234,13 +286,13 @@ class SDNDefenseApp(app_manager.RyuApp):
         datapath.send_msg(delete_groups)
 
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
-        self.add_flow(datapath, 0, match, actions, flags=0, inform_managers=False)
+        self._add_default_flow(datapath, 0, match, actions, flags=0)
 
         ofp_parser = datapath.ofproto_parser
 
         actions = []
         match1 = ofp_parser.OFPMatch(eth_type=0x86DD)  # IPv6
-        self.add_flow(datapath, 999, match1, actions, flags=0, inform_managers=False)
+        self._add_default_flow(datapath, 999, match1, actions, flags=0)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -440,7 +492,7 @@ class SDNDefenseApp(app_manager.RyuApp):
         caller = action.caller
         manager = action.manager
 
-        flow_id = self.add_flow(datapath=dp, priority=priority, match=match, actions=actions,
+        flow_id = self._add_flow(datapath=dp, priority=priority, match=match, actions=actions,
                                 buffer_id=buffer_id, hard_timeout=hard_timeout, idle_timeout=idle_timeout,
                                 flags=flags, caller=caller, manager=manager, request_ctx=request_ctx, response_ctx=response_ctx)
         return flow_id
@@ -486,7 +538,7 @@ class SDNDefenseApp(app_manager.RyuApp):
         manager = managers
 
         goto_group_actions = [parser.OFPActionGroup(group_id)]
-        flow_id = self.add_flow(datapath=datapath, priority=priority, match=match, actions=goto_group_actions,
+        flow_id = self._add_flow(datapath=datapath, priority=priority, match=match, actions=goto_group_actions,
                                 buffer_id=buffer_id, hard_timeout=hard_timeout, idle_timeout=idle_timeout,
                                 flags=flags, caller=caller, manager=manager, related_group_id=group_id,
                                 request_ctx=request_ctx, response_ctx=response_ctx)
@@ -585,7 +637,7 @@ class SDNDefenseApp(app_manager.RyuApp):
             caller = self
         if manager is None:
             manager = self
-        flow_id = self.add_flow(datapath, priority, match, actions, hard_timeout=hard_timeout, flags=flags,
+        flow_id = self._add_flow(datapath, priority, match, actions, hard_timeout=hard_timeout, flags=flags,
                                 idle_timeout=idle_timeout, caller=caller, manager=manager,
                                 request_ctx=request_ctx, response_ctx=response_ctx)
         flow_rem_flag = flags & datapath.ofproto.OFPFF_SEND_FLOW_REM > 1

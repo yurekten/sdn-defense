@@ -80,7 +80,7 @@ class BaseAction(ABC):
 class AddFlowAction(BaseAction):
 
     def __init__(self, datapath, priority, match, actions, buffer_id=None, hard_timeout=0, flags=0, cookie=0,
-                 table_id=0, idle_timeout=0, caller=None, manager=None):
+                 table_id=0, idle_timeout=0, caller=None, manager=None, related_group_id=None):
         super(AddFlowAction, self).__init__(ManagerActionType.ADD_FLOW)
         self.datapath = datapath
         self.priority = priority
@@ -94,6 +94,7 @@ class AddFlowAction(BaseAction):
         self.idle_timeout = idle_timeout
         self.caller = caller
         self.manager = manager
+        self.related_group_id = related_group_id
 
 
 class SDNControllerResponse(object):
