@@ -16,7 +16,7 @@ CURRENT_PATH = pathlib.Path().absolute()
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
-logger.setLevel(level=logging.DEBUG)
+logger.setLevel(level=logging.WARNING)
 REFERENCE_BW = 10000000
 
 
@@ -261,7 +261,7 @@ class FlowMultipathTracker(object):
                         rule_id = installed_time[1]
                         ip_flows = self.statistics["rule_set"][rule_id]["datapath_list"][self.src]["ip_flow"]
                         flow_id = list(ip_flows.keys())[0]
-                        #self.flow_coordinator.delete_flow(self.src, flow_id, self)
+                        self.flow_coordinator.delete_flow(self.src, flow_id, self)
 
                         current_path_index = self.path_choices[start_index]
                         self.active_path = self.paths_with_ports[current_path_index]
@@ -299,7 +299,7 @@ class FlowMultipathTracker(object):
     def _create_flow_rule(self, current_index, ):
         current_path_index = self.path_choices[current_index]
 
-        priority = self.lowest_flow_priority + current_index
+        priority = self.lowest_flow_priority - current_index
         timeout = self.max_time_period_in_second
 
         selected_path = self.paths_with_ports[current_path_index]
