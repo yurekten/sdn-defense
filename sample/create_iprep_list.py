@@ -41,7 +41,6 @@ def create_ip_rep():
     for thread in thread_list:
         thread.join()
 
-
     with open('iprep.list', 'w') as writer:
         for item in ip_list:
             value = ip_list[item]
@@ -49,8 +48,8 @@ def create_ip_rep():
             if len(str(item)) >= 14:
                 tab = "\t"
             comments = ", ".join(value["comments"])
-            writer.write(item + "," + str(value["category"]) + "," + str(value["score"]) + tab + "# " + comments + "\r\n")
-
+            writer.write(
+                item + "," + str(value["category"]) + "," + str(value["score"]) + tab + "# " + comments + "\r\n")
 
 
 def _queue_worker(name, queue, ip_list, ip_whitelist):
@@ -86,5 +85,6 @@ def _queue_worker(name, queue, ip_list, ip_whitelist):
             item = queue.get(block=False)
         except Empty:
             valid = False
+
 
 create_ip_rep()

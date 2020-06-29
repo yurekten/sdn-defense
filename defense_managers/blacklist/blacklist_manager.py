@@ -116,6 +116,7 @@ class BlacklistManager(BaseDefenseManager):
                 "reset_time": datetime.fromtimestamp(self.statistics["reset_time"])
 
                 }
+
     def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         pass
 
@@ -158,9 +159,9 @@ class BlacklistManager(BaseDefenseManager):
                 actions = []
                 for match in matches:
                     response = AddFlowAction(dp, priority, match, actions, hard_timeout=0,
-                                               idle_timeout=self.blacklist_idle_timeout,
-                                               flags=ofproto.OFPFF_SEND_FLOW_REM,
-                                               caller=self, manager=self)
+                                             idle_timeout=self.blacklist_idle_timeout,
+                                             flags=ofproto.OFPFF_SEND_FLOW_REM,
+                                             caller=self, manager=self)
                     manager_response.action_list.append(response)
 
                     if logger.isEnabledFor(logging.DEBUG):

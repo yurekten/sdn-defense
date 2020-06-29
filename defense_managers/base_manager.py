@@ -6,9 +6,6 @@ from defense_managers.event_parameters import SDNControllerRequest, SDNControlle
 from utils.file_utils import save_dict_to_file
 
 
-
-
-
 class BaseDefenseManager(ABC):
 
     def __init__(self, name, sdn_controller_app, enabled, report_folder):
@@ -41,12 +38,13 @@ class BaseDefenseManager(ABC):
     def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         pass
 
-    def on_new_packet_detected(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
-        pass
-    def on_adding_auto_generated_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
+    def on_new_packet_detected(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
         pass
 
-    def before_adding_default_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
+    def on_adding_auto_generated_flow(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
+        pass
+
+    def before_adding_default_flow(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
         pass
 
     def flow_is_deleted(self, dpid, flow_id, caller):

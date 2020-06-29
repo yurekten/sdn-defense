@@ -6,12 +6,11 @@ import pathlib
 import socket
 from datetime import datetime
 
-import networkx as nx
 from ryu.lib import hub
 
 from configuration import CONTROLLER_IP
 from defense_managers.base_manager import BaseDefenseManager
-from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse
+from defense_managers.event_parameters import SDNControllerRequest, SDNControllerResponse
 from utils.openflow_utils import build_arp_request
 
 CURRENT_PATH = pathlib.Path().absolute()
@@ -161,7 +160,6 @@ class RerouteManager(BaseDefenseManager):
     def flow_removed(self, msg):
         if not self.enabled:
             return
-
 
     def reset_statistics(self):
         super(RerouteManager, self).reset_statistics()

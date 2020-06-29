@@ -263,7 +263,7 @@ class FlowMultipathTracker(object):
                         rule_id = installed_time[1]
                         ip_flows = self.statistics["rule_set"][rule_id]["datapath_list"][self.src]["ip_flow"]
                         flow_id = list(ip_flows.keys())[0]
-                        #self.flow_coordinator.delete_flow(self.src, flow_id, self)
+                        # self.flow_coordinator.delete_flow(self.src, flow_id, self)
 
                         current_path_index = self.path_choices[start_index]
                         self.active_path = self.paths_with_ports[current_path_index]
@@ -430,24 +430,15 @@ class FlowMultipathTracker(object):
             ofproto = dp.ofproto
             match = match_actions[node][0]
             actions = match_actions[node][1]
-            new_hard_timeout = hard_timeout
-            # if node == first:
-            # hub.sleep(0.1)
-            # new_hard_timeout = new_hard_timeout - 1
+
             new_flow = AddFlowAction(dp, priority, match, actions)
-            new_flow.hard_timeout = new_hard_timeout
+            new_flow.hard_timeout = hard_timeout
             new_flow.flags = ofproto.OFPFF_SEND_FLOW_REM
             new_flow.idle_timeout = idle_timeout
             new_flow.caller = self
             new_flow.manager = self.caller_app
             flow_id_result = self.flow_coordinator.add_managed_flow(new_flow)
 
-            # flow_id_result = self.flow_coordinator.add_flow(dp, priority,
-            #                                          match, actions,
-            #                                          hard_timeout=new_hard_timeout,
-            #                                          idle_timeout=idle_timeout,
-            #                                          flags=ofproto.OFPFF_SEND_FLOW_REM,
-            #                                          caller=self, manager=self.caller_app)
             if not isinstance(flow_id_result, List):
                 flow_id_result = [flow_id_result]
             for flow_id in flow_id_result:

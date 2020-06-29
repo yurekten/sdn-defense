@@ -8,6 +8,7 @@ class ProcessResult(Enum):
     CONTINUE = 1,
     FINISH = 2
 
+
 class ManagerActionType(Enum):
     ADD_FLOW = 100
     DELETE_FLOW = 110
@@ -17,11 +18,11 @@ class RequestParams(object):
     def __init__(self):
         pass
 
+
 class PacketParams(RequestParams):
 
     def __init__(self, src_dpid=None, in_port=None, out_port=None, src_ip=None, dst_ip=None,
                  src_eth=None, dst_eth=None, target_dpid=None, target_dpid_out_port=None, default_match=None):
-
         super(PacketParams, self).__init__()
         self.src_dpid = src_dpid
         self.in_port = in_port
@@ -74,7 +75,6 @@ class BaseAction(ABC):
         with BaseAction._lock:
             BaseAction._counter = BaseAction._counter + 1
             self.id = BaseAction._counter
-
 
 
 class AddFlowAction(BaseAction):

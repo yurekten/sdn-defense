@@ -8,7 +8,6 @@ from datetime import datetime
 
 import networkx as nx
 from ryu.lib import hub
-from ryu.lib.packet import ether_types
 
 from configuration import CONTROLLER_IP
 from defense_managers.base_manager import BaseDefenseManager
@@ -171,7 +170,6 @@ class IDSBlacklistManager(BaseDefenseManager):
 
         self._send_to_ids_port(request_ctx, response_ctx)
 
-
     def _send_to_ids_port(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
         if isinstance(request_ctx.params, PacketParams):
             dpid = request_ctx.params.src_dpid
@@ -206,15 +204,14 @@ class IDSBlacklistManager(BaseDefenseManager):
 
                 response_ctx.add_response(self, manager_response)
 
-    def before_adding_default_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
+    def before_adding_default_flow(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
         self._send_to_ids_port(request_ctx, response_ctx)
 
-    def on_adding_auto_generated_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
+    def on_adding_auto_generated_flow(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
         self._send_to_ids_port(request_ctx, response_ctx)
 
     def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         pass
-
 
     def _send_arp_request(self, dpid, src_ip, dst_ip, in_port=None, src_mac=None):
 
@@ -236,7 +233,6 @@ class IDSBlacklistManager(BaseDefenseManager):
     def flow_removed(self, msg):
         if not self.enabled:
             return
-
 
     def reset_statistics(self):
         super(IDSBlacklistManager, self).reset_statistics()

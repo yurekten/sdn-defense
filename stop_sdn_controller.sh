@@ -1,15 +1,13 @@
 #!/bin/bash
 
 process_name="application_ryu.py"
-for iter in 1 2 3
-do
-  process_list=`ps -ef | grep $process_name | awk {'print $2'}`
-  process_count=`ps -ef | grep $process_name | awk {'print $2'} | wc -l`
+for iter in 1 2 3; do
+  process_list=$(ps -ef | grep $process_name | awk {'print $2'})
+  process_count=$(ps -ef | grep $process_name | awk {'print $2'} | wc -l)
 
-  if (( $process_count > 1 ))
-  then
-     echo "$iter Process list: $process_list"
-     sudo kill -9 $process_list
+  if (($process_count > 1)); then
+    echo "$iter Process list: $process_list"
+    sudo kill -9 $process_list
   else
     echo "$process_name : No process exists"
   fi

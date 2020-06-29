@@ -1,6 +1,3 @@
-from urllib.parse import urlparse
-
-
 de
 # from urlparse import urlparse  # Python 2
 # parsed_uri = urlparse('http://stackoverflow.com/questions/1234567/blah-blah-blah-blah')

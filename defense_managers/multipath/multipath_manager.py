@@ -1,6 +1,5 @@
 import logging
 import os
-import pathlib
 from collections import defaultdict
 from datetime import datetime
 from threading import RLock
@@ -8,7 +7,7 @@ from threading import RLock
 import networkx as nx
 
 from defense_managers.base_manager import BaseDefenseManager
-from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse
+from defense_managers.event_parameters import SDNControllerRequest, SDNControllerResponse
 from defense_managers.multipath.flow_multipath_tracker import FlowMultipathTracker
 
 CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +16,7 @@ logger.setLevel(level=logging.WARNING)
 REFERENCE_BW = 10000000
 
 DEFAULT_TARGET_IP_LIST_FILE = os.path.join(CURRENT_PATH, "target_ip_list.txt")
+
 
 class MultipathManager(BaseDefenseManager):
 
@@ -137,7 +137,7 @@ class MultipathManager(BaseDefenseManager):
             return output_port
         return None
 
-    def before_adding_default_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
+    def before_adding_default_flow(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
         if not self.enabled:
             return
 
@@ -172,20 +172,22 @@ class MultipathManager(BaseDefenseManager):
                 hard_timeout = self.activation_delay
                 idle_timeout = 0
 
-
-                flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
-                                                                 hard_timeout, idle_timeout, self, self, request_ctx, response_ctx)
+                flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports,
+                                                                           priority, flags,
+                                                                           hard_timeout, idle_timeout, self, self,
+                                                                           request_ctx, response_ctx)
                 self.watch_list.add(flow_id)
                 # flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
                 #                                                  hard_timeout + 1, idle_timeout, self, self)
 
-                flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
-                                                                 hard_timeout, idle_timeout, self, self, request_ctx, response_ctx)
+                flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports,
+                                                                           priority, flags,
+                                                                           hard_timeout, idle_timeout, self, self,
+                                                                           request_ctx, response_ctx)
                 self.watch_list.add(flow_id)
                 # flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
                 #                                                  hard_timeout + 1, idle_timeout, self, self)
                 # self.watch_list.add(flow_id)
-
 
     # def default_flow_will_be_added(self, datapath, src_ip, dst_ip, in_port, out_ports):
     #     if not self.enabled:

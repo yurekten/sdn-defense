@@ -7,8 +7,8 @@ from ryu.cmd import manager
 
 from configuration import CONTROLLER_PORT
 
-
 CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
+
 
 def main():
     sys.path.append(CURRENT_PATH)

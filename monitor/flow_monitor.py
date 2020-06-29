@@ -30,7 +30,8 @@ class FlowMonitor(object):
 
         self.reset_statistics()
         if watch_generated_flows:
-            logger.warning(f"{datetime.now()} - {self.name} - Generated_flows will be watched !!! All flows statistics will be saved.")
+            logger.warning(
+                f"{datetime.now()} - {self.name} - Generated_flows will be watched !!! All flows statistics will be saved.")
 
     def get_status(self):
         status = {"watch_generated_flows": self.watch_generated_flows,
@@ -77,7 +78,6 @@ class FlowMonitor(object):
         if dp.id in self.flows:
             if msg.cookie in self.flows[dp.id]:
                 info = self.flows[dp.id][msg.cookie]
-                #info[1].flow_removed(msg)
                 callers = info["caller"]
                 if callers:
                     for caller in callers:
@@ -85,12 +85,12 @@ class FlowMonitor(object):
                 group_id = info["group_id"]
                 if group_id is not None:
                     delete_group = parser.OFPGroupMod(datapath=dp, command=ofproto.OFPGC_DELETE,
-                                                       group_id=group_id)
+                                                      group_id=group_id)
                     dp.send_msg(delete_group)
 
                 del self.flows[dp.id][msg.cookie]
 
-        #if self.watch_generated_flows:
+        # if self.watch_generated_flows:
         if msg.datapath.id in self.statistics["flows"]:
             if msg.cookie in self.statistics["flows"][msg.datapath.id]:
                 self.statistics["removed-flow-count"] = self.statistics["removed-flow-count"] + 1
