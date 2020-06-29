@@ -13,7 +13,7 @@ from ryu.lib.packet import ether_types
 from configuration import CONTROLLER_IP
 from defense_managers.base_manager import BaseDefenseManager
 from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse, \
-    ManagerResponse, AddFlowAction
+    ManagerResponse, AddFlowAction, PacketParams
 from utils.openflow_utils import build_arp_request
 
 CURRENT_PATH = pathlib.Path().absolute()
@@ -173,15 +173,20 @@ class IDSBlacklistManager(BaseDefenseManager):
 
 
     def _send_to_ids_port(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
-
-        src_ip = request_ctx.params.src_ip
-        dst_ip = request_ctx.params.dst_ip
-        dpid = request_ctx.params.src_dpid
-        in_port = request_ctx.params.in_port
-        eth_src = request_ctx.params.src_eth
+        if isinstance(request_ctx.params, PacketParams):
+            dpid = request_ctx.params.src_dpid
+            in_port = request_ctx.params.in_port
+        elif isinstance(request_ctx.params, AddFlowAction):
+            dpid = request_ctx.params.datapath.id
+            if request_ctx.params.match and "in_port" in request_ctx.params.match:
+                in_port = request_ctx.params.match["in_port"]
+            else:
+                in_port = None
+        else:
+            return
 
         if self.ids_dpid is not None and self.gateway_dpid is not None:
-            if self.gateway_dpid == dpid and self.ids_port_no != in_port:
+            if self.gateway_dpid == dpid and (in_port is not None and self.ids_port_no != in_port):
                 manager_response = ManagerResponse(self, ProcessResult.CONTINUE)
                 parser = self.datapath_list[dpid].ofproto_parser
 
@@ -202,6 +207,9 @@ class IDSBlacklistManager(BaseDefenseManager):
                 response_ctx.add_response(self, manager_response)
 
     def before_adding_default_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
+        self._send_to_ids_port(request_ctx, response_ctx)
+
+    def on_adding_auto_generated_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
         self._send_to_ids_port(request_ctx, response_ctx)
 
     def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):

@@ -43,6 +43,8 @@ class BaseDefenseManager(ABC):
 
     def on_new_packet_detected(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
         pass
+    def on_adding_auto_generated_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
+        pass
 
     def before_adding_default_flow(self, request_ctx : SDNControllerRequest, response_ctx: SDNControllerResponse):
         pass

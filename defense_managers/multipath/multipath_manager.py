@@ -174,13 +174,13 @@ class MultipathManager(BaseDefenseManager):
 
 
                 flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
-                                                                 hard_timeout, idle_timeout, self, self)
+                                                                 hard_timeout, idle_timeout, self, self, request_ctx, response_ctx)
                 self.watch_list.add(flow_id)
                 # flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, out_ports, priority, flags,
                 #                                                  hard_timeout + 1, idle_timeout, self, self)
 
                 flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
-                                                                 hard_timeout, idle_timeout, self, self)
+                                                                 hard_timeout, idle_timeout, self, self, request_ctx, response_ctx)
                 self.watch_list.add(flow_id)
                 # flow_id = self.sdn_controller_app.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, out_ports, priority, flags,
                 #                                                  hard_timeout + 1, idle_timeout, self, self)

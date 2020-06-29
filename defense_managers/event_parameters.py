@@ -38,30 +38,42 @@ class PacketParams(RequestParams):
 
 
 class SDNControllerRequest(object):
+    _id_counter = 0
+    lock = RLock()
 
     def __init__(self, msg, params):
+        with SDNControllerRequest.lock:
+            SDNControllerRequest._id_counter = SDNControllerRequest._id_counter + 1
+            self.id = SDNControllerRequest._id_counter
+
         self.context = {}
         self.msg = msg
         self.params = params
 
 
 class ManagerResponse(object):
+    _id_counter = 0
+    lock = RLock()
 
     def __init__(self, owner, process_result=ProcessResult.CONTINUE):
+        with ManagerResponse.lock:
+            ManagerResponse._id_counter = ManagerResponse._id_counter + 1
+            self.id = ManagerResponse._id_counter
+
         self.owner = owner
         self.action_list = list()
         self.process_result = process_result
 
 
 class BaseAction(ABC):
-    _counter = 1
+    _counter = 0
     _lock = RLock()
 
     def __init__(self, action_type: ManagerActionType):
         self.result_type = action_type
         with BaseAction._lock:
-            self.id = BaseAction._counter
             BaseAction._counter = BaseAction._counter + 1
+            self.id = BaseAction._counter
 
 
 
@@ -85,8 +97,14 @@ class AddFlowAction(BaseAction):
 
 
 class SDNControllerResponse(object):
+    _id_counter = 0
+    lock = RLock()
 
     def __init__(self, request_ctx: SDNControllerRequest):
+        with SDNControllerResponse.lock:
+            SDNControllerResponse._id_counter = SDNControllerResponse._id_counter + 1
+            self.id = SDNControllerResponse._id_counter
+
         self.responses = dict()
         self.request_ctx = request_ctx
 

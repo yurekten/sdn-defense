@@ -5,6 +5,7 @@ import time
 from collections import defaultdict, Counter
 from datetime import datetime
 from threading import RLock
+from typing import List
 
 from ryu.lib import hub
 from ryu.lib.packet import ether_types
@@ -433,21 +434,23 @@ class FlowMultipathTracker(object):
             # hub.sleep(0.1)
             # new_hard_timeout = new_hard_timeout - 1
 
-            flow_id = self.flow_coordinator.add_flow(dp, priority,
+            flow_id_result = self.flow_coordinator.add_flow(dp, priority,
                                                      match, actions,
                                                      hard_timeout=new_hard_timeout,
                                                      idle_timeout=idle_timeout,
                                                      flags=ofproto.OFPFF_SEND_FLOW_REM,
                                                      caller=self, manager=self.caller_app)
-
-            stats = rule_set["datapath_list"][node]["ip_flow"]
-            timestamp = datetime.timestamp(datetime.now())
-            stats[flow_id] = defaultdict()
-            stats[flow_id]["created_time"] = timestamp
-            stats[flow_id]["removed_time"] = None
-            stats[flow_id]["packet_count"] = None
-            stats[flow_id]["byte_count"] = None
-            self.flow_id_rule_set[flow_id] = self.rule_set_id
-            stats[flow_id]["flow_params"] = (node, match, actions)
+            if not isinstance(flow_id_result, List):
+                flow_id_result = [flow_id_result]
+            for flow_id in flow_id_result:
+                stats = rule_set["datapath_list"][node]["ip_flow"]
+                timestamp = datetime.timestamp(datetime.now())
+                stats[flow_id] = defaultdict()
+                stats[flow_id]["created_time"] = timestamp
+                stats[flow_id]["removed_time"] = None
+                stats[flow_id]["packet_count"] = None
+                stats[flow_id]["byte_count"] = None
+                self.flow_id_rule_set[flow_id] = self.rule_set_id
+                stats[flow_id]["flow_params"] = (node, match, actions)
 
         return self.rule_set_id

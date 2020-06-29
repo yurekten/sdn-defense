@@ -122,7 +122,7 @@ class SDNDefenseApp(app_manager.RyuApp):
         datapath.send_msg(mod)
 
     def add_flow(self, datapath, priority, match, actions, buffer_id=None, hard_timeout=0, flags=0, cookie=0,
-                 table_id=0, idle_timeout=0, caller=None, manager=None, related_group_id=None):
+                 table_id=0, idle_timeout=0, caller=None, manager=None, related_group_id=None, request_ctx=None, response_ctx=None, inform_managers=True):
         if manager is None:
             manager = []
         elif not isinstance(manager, List):
@@ -132,7 +132,6 @@ class SDNDefenseApp(app_manager.RyuApp):
             caller = []
         elif not isinstance(caller, List):
             caller = [caller]
-
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         if idle_timeout == 0:
@@ -140,6 +139,29 @@ class SDNDefenseApp(app_manager.RyuApp):
         flow_id = cookie
         if cookie == 0:
             flow_id = self._get_next_flow_cookie(datapath.id)
+
+        #manager generates it
+        if inform_managers and request_ctx is None:
+            new_flow = AddFlowAction(datapath, priority, match, actions)
+            new_flow.buffer_id = buffer_id
+            new_flow.hard_timeout = hard_timeout
+            new_flow.flags = flags
+            new_flow.cookie = cookie
+            new_flow.table_id = table_id
+            new_flow.idle_timeout = idle_timeout
+            new_flow.caller = caller
+            new_flow.manager = manager
+            new_request_ctx = SDNControllerRequest(None, new_flow)
+
+            response_ctx = SDNControllerResponse(request_ctx=new_request_ctx)
+            self.on_adding_auto_generated_flow(new_request_ctx, response_ctx)
+            respose_actions = []
+            for item in response_ctx.responses:
+                responses=  response_ctx.responses[item]
+                for item_action in responses.action_list:
+                    respose_actions.extend(item_action.actions)
+
+            #actions.extend(respose_actions)
 
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         if buffer_id:
@@ -151,6 +173,7 @@ class SDNDefenseApp(app_manager.RyuApp):
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority, idle_timeout=idle_timeout,
                                     match=match, instructions=inst, hard_timeout=hard_timeout, flags=flags,
                                     cookie=flow_id, table_id=table_id)
+
         datapath.send_msg(mod)
         flows = self.flow_monitor.flows
         if datapath.id not in flows:
@@ -159,6 +182,12 @@ class SDNDefenseApp(app_manager.RyuApp):
         flows[datapath.id][flow_id] = {"packet": mod, "caller": caller, "manager": manager,
                                        "group_id": related_group_id}
         return flow_id
+
+    def on_adding_auto_generated_flow(self, request_ctx, response_ctx):
+
+        for manager in self.defense_managers:
+            manager.on_adding_auto_generated_flow(request_ctx, response_ctx)
+
 
     def _get_next_flow_cookie(self, sw_id):
         if sw_id not in self.sw_cookie:
@@ -205,13 +234,13 @@ class SDNDefenseApp(app_manager.RyuApp):
         datapath.send_msg(delete_groups)
 
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
-        self.add_flow(datapath, 0, match, actions, flags=0)
+        self.add_flow(datapath, 0, match, actions, flags=0, inform_managers=False)
 
         ofp_parser = datapath.ofproto_parser
 
         actions = []
         match1 = ofp_parser.OFPMatch(eth_type=0x86DD)  # IPv6
-        self.add_flow(datapath, 999, match1, actions, flags=0)
+        self.add_flow(datapath, 999, match1, actions, flags=0, inform_managers=False)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -354,7 +383,7 @@ class SDNDefenseApp(app_manager.RyuApp):
         ofproto = datapath.ofproto
         # add idle flow
         priority = 1
-        idle_timeout = 10
+        idle_timeout = 5
         hard_timeout = 0
         flags = 0
         # out_port = actions[0].port
@@ -387,17 +416,17 @@ class SDNDefenseApp(app_manager.RyuApp):
 
         self._process_event_responses(request_ctx, response_ctx)
         self.create_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, output_ports, priority, flags,
-                                      hard_timeout, idle_timeout, self, self)
+                                      hard_timeout, idle_timeout, self, self, request_ctx, response_ctx)
 
         self.create_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, output_ports, priority, flags,
-                                      hard_timeout, idle_timeout, self, self)
+                                      hard_timeout, idle_timeout, self, self, request_ctx, response_ctx)
         self.create_arp_rule_if_not_exist(dpid, src_ip, dst_ip, in_port, output_ports, priority, flags,
-                                          hard_timeout, idle_timeout, self, self)
+                                          hard_timeout, idle_timeout, self, self, request_ctx, response_ctx)
 
         self.create_arp_rule_if_not_exist(dpid, dst_ip, src_ip, in_port, output_ports, priority, flags,
-                                          hard_timeout, idle_timeout, self, self)
+                                          hard_timeout, idle_timeout, self, self, request_ctx, response_ctx)
 
-    def apply_add_flow_action(self, request_ctx: SDNControllerRequest, action: AddFlowAction):
+    def apply_add_flow_action(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse, action: AddFlowAction):
         assert action.result_type == ManagerActionType.ADD_FLOW
 
         dp = action.datapath
@@ -413,11 +442,16 @@ class SDNDefenseApp(app_manager.RyuApp):
 
         flow_id = self.add_flow(datapath=dp, priority=priority, match=match, actions=actions,
                                 buffer_id=buffer_id, hard_timeout=hard_timeout, idle_timeout=idle_timeout,
-                                flags=flags, caller=caller, manager=manager)
+                                flags=flags, caller=caller, manager=manager, request_ctx=request_ctx, response_ctx=response_ctx)
         return flow_id
 
-    def merge_and_apply_flow_actions(self, request_ctx: SDNControllerRequest, actions : List[AddFlowAction], append_actions: List[AddFlowAction], callers, managers):
+    def merge_and_apply_flow_actions(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse,
+                                     actions : List[AddFlowAction], append_actions: List[AddFlowAction], callers, managers):
+        assert len(actions) >= 1
         buckets = []
+        if len(actions) == 1 and len(append_actions) == 0:
+            return self.apply_add_flow_action(request_ctx, response_ctx, actions[0])
+
         datapath = request_ctx.msg.datapath
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
@@ -454,7 +488,8 @@ class SDNDefenseApp(app_manager.RyuApp):
         goto_group_actions = [parser.OFPActionGroup(group_id)]
         flow_id = self.add_flow(datapath=datapath, priority=priority, match=match, actions=goto_group_actions,
                                 buffer_id=buffer_id, hard_timeout=hard_timeout, idle_timeout=idle_timeout,
-                                flags=flags, caller=caller, manager=manager, related_group_id=group_id)
+                                flags=flags, caller=caller, manager=manager, related_group_id=group_id,
+                                request_ctx=request_ctx, response_ctx=response_ctx)
         return flow_id
 
     def _process_event_responses(self, request_ctx, response_ctx) -> bool:
@@ -485,10 +520,7 @@ class SDNDefenseApp(app_manager.RyuApp):
                 finish = True
 
         for match, actions in add_flow_actions.items():
-            if len(actions) == 1 and len(append_actions) == 0:
-                flow_id = self.apply_add_flow_action(request_ctx, actions[0])
-            elif len(actions) >= 1 and  len(actions) + len(append_actions) > 1:
-                flow_id = self.merge_and_apply_flow_actions(request_ctx, actions, append_actions, callers, managers)
+            flow_id = self.merge_and_apply_flow_actions(request_ctx, response_ctx, actions, append_actions, callers, managers)
 
         #x = action.manager
         return finish
@@ -511,7 +543,7 @@ class SDNDefenseApp(app_manager.RyuApp):
 
     @cached(cache=TTLCache(maxsize=1024, ttl=1))
     def create_arp_rule_if_not_exist(self, dpid, src_ip, dst_ip, in_port, out_port_list, priority, flags, hard_timeout,
-                                     idle_timeout, caller, manager):
+                                     idle_timeout, caller, manager, request_ctx, response_ctx):
         datapath = self.datapath_list[dpid]
         parser = datapath.ofproto_parser
         match = parser.OFPMatch(
@@ -521,13 +553,13 @@ class SDNDefenseApp(app_manager.RyuApp):
             in_port=in_port
         )
         return self._add_rule(dpid, match, src_ip, dst_ip, in_port, out_port_list, priority, flags,
-                              hard_timeout, idle_timeout, caller, manager)
+                              hard_timeout, idle_timeout, caller, manager, request_ctx, response_ctx)
 
 
 
     @cached(cache=TTLCache(maxsize=1024, ttl=1))
     def create_rule_if_not_exist(self, dpid, src_ip, dst_ip, in_port, output_ports, priority, flags, hard_timeout,
-                                 idle_timeout, caller, manager):
+                                 idle_timeout, caller, manager, request_ctx, response_ctx):
         datapath = self.datapath_list[dpid]
         parser = datapath.ofproto_parser
         match = parser.OFPMatch(
@@ -537,10 +569,10 @@ class SDNDefenseApp(app_manager.RyuApp):
             in_port=in_port
         )
         return self._add_rule(dpid, match, src_ip, dst_ip, in_port, output_ports, priority, flags, hard_timeout, idle_timeout,
-                             caller, manager)
+                             caller, manager, request_ctx, response_ctx)
 
     def _add_rule(self, dpid, match, src_ip, dst_ip, in_port, output_ports, priority, flags,
-                 hard_timeout, idle_timeout, caller, manager):
+                 hard_timeout, idle_timeout, caller, manager, request_ctx, response_ctx):
         datapath = self.datapath_list[dpid]
         parser = datapath.ofproto_parser
         actions = []
@@ -554,7 +586,8 @@ class SDNDefenseApp(app_manager.RyuApp):
         if manager is None:
             manager = self
         flow_id = self.add_flow(datapath, priority, match, actions, hard_timeout=hard_timeout, flags=flags,
-                                idle_timeout=idle_timeout, caller=caller, manager=manager)
+                                idle_timeout=idle_timeout, caller=caller, manager=manager,
+                                request_ctx=request_ctx, response_ctx=response_ctx)
         flow_rem_flag = flags & datapath.ofproto.OFPFF_SEND_FLOW_REM > 1
         if src_ip in self.host_ip_map and self.host_ip_map[src_ip][0] == dpid and flow_rem_flag:
             self.flow_monitor.add_to_flow_list(dpid, flow_id, match, actions, priority, idle_timeout, hard_timeout)
