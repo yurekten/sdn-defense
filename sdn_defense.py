@@ -26,6 +26,7 @@ from defense_managers.blacklist.ids_blacklist_manager import IDSBlacklistManager
 from defense_managers.event_parameters import SDNControllerRequest, SDNControllerResponse, \
     PacketParams, ProcessResult, ManagerActionType, AddFlowAction
 from defense_managers.multipath.multipath_manager import MultipathManager
+from defense_managers.quarantine.quarantine_manager import QuarantineManager
 from defense_managers.send_to_decoy.send_to_decoy_manager import SendToDecoyManager
 from monitor.flow_monitor import FlowMonitor
 from monitor.topology_monitor import TopologyMonitor
@@ -71,17 +72,19 @@ class SDNDefenseApp(app_manager.RyuApp):
         blacklist_enabled = True
         ids_blacklist_enabled = True
         send_to_decoy_enabled = True
-
+        quarantine_manager_enabled = True
         self.defense_managers_dict = {}
         self.multipath_manager = MultipathManager(self, multipath_enabled)
         self.blacklist_manager = BlacklistManager(self, blacklist_enabled)
         self.ids_blacklist_manager = IDSBlacklistManager(self, ids_blacklist_enabled)
         self.send_to_decoy_manager = SendToDecoyManager(self, send_to_decoy_enabled)
+        self.quarantine_manager = QuarantineManager(self, quarantine_manager_enabled)
 
         self.defense_managers_dict[self.multipath_manager.name] = self.multipath_manager
         self.defense_managers_dict[self.blacklist_manager.name] = self.blacklist_manager
         self.defense_managers_dict[self.ids_blacklist_manager.name] = self.ids_blacklist_manager
         self.defense_managers_dict[self.send_to_decoy_manager.name] = self.send_to_decoy_manager
+        self.defense_managers_dict[self.quarantine_manager.name] = self.quarantine_manager
 
         self.defense_managers = []
         for manager in list(self.defense_managers_dict.values()):

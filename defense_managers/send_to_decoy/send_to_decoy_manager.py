@@ -1,18 +1,12 @@
 import logging
 import os
-from collections import defaultdict
 from datetime import datetime
-from typing import List
 
 from ryu.lib import hub
-from ryu.lib.packet import ether_types
 
 from configuration import CONTROLLER_IP
-from defense_managers.base_manager import BaseDefenseManager
-from defense_managers.blacklist.base_item_manager import ManagedItemManager
-from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse, \
-    ManagerResponse, AddFlowAction
-from utils.common_utils import is_valid_remote_ip
+from defense_managers.base_item_manager import ManagedItemManager
+from defense_managers.event_parameters import SDNControllerRequest, SDNControllerResponse
 
 CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
@@ -24,7 +18,7 @@ DECOY_IP_ADDRESS = "10.0.88.11"
 class SendToDecoyManager(ManagedItemManager):
 
     def __init__(self, sdn_controller_app, enabled=True, max_managed_item_count=30000,
-                 default_idle_timeout=10, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE, 
+                 default_idle_timeout=10, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE,
                  managed_item_file=DEFAULT_IP_SUPICIOUS_FILE, decoy_ip=DECOY_IP_ADDRESS, service_path_index=111):
         """
         :param sdn_controller_app: Ryu Controller App
@@ -32,20 +26,20 @@ class SendToDecoyManager(ManagedItemManager):
         """
         name = "send_to_decoy_manager"
         super(SendToDecoyManager, self).__init__(name, sdn_controller_app, enabled=enabled,
-                                               max_managed_item_count=max_managed_item_count,
-                                               default_idle_timeout=default_idle_timeout,
-                                               item_whitelist_file=item_whitelist_file,
-                                               managed_item_file=managed_item_file,
-                                               service_path_index=service_path_index)
-    
+                                                 max_managed_item_count=max_managed_item_count,
+                                                 default_idle_timeout=default_idle_timeout,
+                                                 item_whitelist_file=item_whitelist_file,
+                                                 managed_item_file=managed_item_file,
+                                                 service_path_index=service_path_index)
+
         self.decoy_ip = decoy_ip
         self.decoy_dpid = None
-        self.decoy_dpid_port =  None
+        self.decoy_dpid_port = None
         self.decoy_eth_address = None
 
         if self.enabled:
             hub.spawn(self._find_decoy)
-        
+
     def _find_decoy(self):
 
         while self.decoy_dpid is None:
@@ -70,11 +64,11 @@ class SendToDecoyManager(ManagedItemManager):
 
         if self.decoy_dpid is None:
             if src_ip == self.decoy_ip:
-                    self.decoy_dpid = dpid
-                    self.decoy_dpid_port = in_port
-                    self.decoy_eth_address = eth_src
-                    logger.warning(
-                        f'{datetime.now()} - {self.name} - Decoy is connected to datapath {dpid}, port {in_port}')
+                self.decoy_dpid = dpid
+                self.decoy_dpid_port = in_port
+                self.decoy_eth_address = eth_src
+                logger.warning(
+                    f'{datetime.now()} - {self.name} - Decoy is connected to datapath {dpid}, port {in_port}')
         else:
             self._send_to_decoy(request_ctx, response_ctx)
 
@@ -97,7 +91,7 @@ class SendToDecoyManager(ManagedItemManager):
             src_in_port = request_ctx.params.in_port
             src = self.host_ip_map[src_ip][2]
             h1 = self.hosts[src]
-            #only source dpid is processed
+            # only source dpid is processed
             if h1[0] != src_dpid:
                 return
             # TODO: Check IP changes port
@@ -106,14 +100,10 @@ class SendToDecoyManager(ManagedItemManager):
                 if (src_dpid, src_in_port) in applied_rules:
                     return
 
-            if src_dpid == self.decoy_dpid:
-                pass
-            else:
-                self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip)
+            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip)
 
-                self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, reverse=True)
-
-
+            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip,
+                              reverse=True)
 
     def flow_removed(self, msg):
         if not self.enabled:
@@ -134,12 +124,12 @@ class SendToDecoyManager(ManagedItemManager):
                 if ip in self.applied_item_list:
                     if (dpid, in_port) in self.applied_item_list[ip]:
                         if nsh_si and nsh_si == self.src_si:
-                            logger.warning(f"{datetime.now()} - {self.name} - Sent to decoy service is deleted for suspicious ip {ip} in {dpid} port {in_port}")
+                            logger.warning(
+                                f"{datetime.now()} - {self.name} - Sent to decoy service is deleted for suspicious ip {ip} in {dpid} port {in_port}")
                         else:
-                            logger.warning(f"{datetime.now()} - {self.name} - Sent to decoy reverse service is deleted from {ip} to suspicious ip")
+                            logger.warning(
+                                f"{datetime.now()} - {self.name} - Sent to decoy reverse service is deleted from {ip} to suspicious ip")
                         ind = self.applied_item_list[ip].index((dpid, in_port))
                         del self.applied_item_list[ip][ind]
                         if len(self.applied_item_list[ip]) == 0:
                             del self.applied_item_list[ip]
-
-

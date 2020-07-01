@@ -4,11 +4,9 @@ from datetime import datetime
 
 from ryu.lib.packet import ether_types
 
-from defense_managers.base_manager import BaseDefenseManager
-from defense_managers.blacklist.base_item_manager import ManagedItemManager
+from defense_managers.base_item_manager import ManagedItemManager
 from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse, \
     ManagerResponse, AddFlowAction
-from utils.common_utils import is_valid_remote_ip
 
 CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
@@ -55,7 +53,7 @@ class BlacklistManager(ManagedItemManager):
                     ipv4_src=src_ip
                 )
                 matches.append(match)
-                self._add_ip_to_blacklist(dpid, src_ip)
+                self._add_ip_to_managed_list(dpid, src_ip)
 
             if dst_ip in self.managed_item_list and (
                     dst_ip not in self.applied_item_list or dpid not in self.applied_item_list[dst_ip]):
@@ -64,7 +62,7 @@ class BlacklistManager(ManagedItemManager):
                     ipv4_dst=dst_ip
                 )
                 matches.append(match)
-                self._add_ip_to_blacklist(dpid, dst_ip)
+                self._add_ip_to_managed_list(dpid, dst_ip)
 
             if len(matches) > 0:
                 self.statistics["hit_count"] = self.statistics["hit_count"] + 1
@@ -82,7 +80,7 @@ class BlacklistManager(ManagedItemManager):
 
                 response_ctx.add_response(self, manager_response)
 
-    def _add_ip_to_blacklist(self, dpid, ip):
+    def _add_ip_to_managed_list(self, dpid, ip):
         if ip not in self.applied_item_list:
             self.statistics[self.applied_items][ip] = {}
             self.applied_item_list[ip] = []
