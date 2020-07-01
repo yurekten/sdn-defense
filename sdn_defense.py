@@ -26,6 +26,7 @@ from defense_managers.blacklist.ids_blacklist_manager import IDSBlacklistManager
 from defense_managers.event_parameters import SDNControllerRequest, SDNControllerResponse, \
     PacketParams, ProcessResult, ManagerActionType, AddFlowAction
 from defense_managers.multipath.multipath_manager import MultipathManager
+from defense_managers.send_to_decoy.send_to_decoy_manager import SendToDecoyManager
 from monitor.flow_monitor import FlowMonitor
 from monitor.topology_monitor import TopologyMonitor
 from rest.blacklist_manager_rest import BlacklistManagerRest
@@ -69,18 +70,18 @@ class SDNDefenseApp(app_manager.RyuApp):
         multipath_enabled = True
         blacklist_enabled = True
         ids_blacklist_enabled = True
-        # send_to_decoy_enabled = True
+        send_to_decoy_enabled = True
 
         self.defense_managers_dict = {}
         self.multipath_manager = MultipathManager(self, multipath_enabled)
         self.blacklist_manager = BlacklistManager(self, blacklist_enabled)
         self.ids_blacklist_manager = IDSBlacklistManager(self, ids_blacklist_enabled)
-        # self.send_to_decoy_manager = SendToDecoyManager(self, send_to_decoy_enabled)
+        self.send_to_decoy_manager = SendToDecoyManager(self, send_to_decoy_enabled)
 
         self.defense_managers_dict[self.multipath_manager.name] = self.multipath_manager
         self.defense_managers_dict[self.blacklist_manager.name] = self.blacklist_manager
         self.defense_managers_dict[self.ids_blacklist_manager.name] = self.ids_blacklist_manager
-        # self.defense_managers_dict[self.send_to_decoy_manager.name] = self.send_to_decoy_manager
+        self.defense_managers_dict[self.send_to_decoy_manager.name] = self.send_to_decoy_manager
 
         self.defense_managers = []
         for manager in list(self.defense_managers_dict.values()):
@@ -337,9 +338,15 @@ class SDNDefenseApp(app_manager.RyuApp):
         if src_ip not in self.host_ip_map:
             self.hosts[src] = (dpid, in_port, src_ip)
             self.host_ip_map[src_ip] = (dpid, in_port, src)
+        dst_dpid = None
+        dst_dpid_out_port = None
+        if dst_ip in self.host_ip_map:
+            dst_dpid = self.host_ip_map[dst_ip][0]
+            dst_dpid_out_port = self.host_ip_map[dst_ip][1]
 
         request_params = PacketParams(src_dpid=dpid, in_port=in_port, src_ip=src_ip,
-                                      dst_ip=dst_ip, src_eth=src, dst_eth=dst, default_match=default_match)
+                                      dst_ip=dst_ip, src_eth=src, dst_eth=dst,
+                                      dst_dpid=dst_dpid, dst_dpid_out_port=dst_dpid_out_port, default_match=default_match)
 
         request_ctx = SDNControllerRequest(msg, request_params)
 
@@ -493,8 +500,11 @@ class SDNDefenseApp(app_manager.RyuApp):
         datapath = request_ctx.msg.datapath
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
+        out_ports = []
+        # TODO: delete duplicate out ports
         for action in actions:
             bucket_actions = action.actions
+
             buckets.append(
                 parser.OFPBucket(
                     actions=bucket_actions

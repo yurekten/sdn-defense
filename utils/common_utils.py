@@ -11,15 +11,12 @@ def entropy(array):
     return total_entropy
 
 
-def is_valid_remote_ip(ip):
+def is_valid_ip(ip):
     """
-    validate sting ip if it is valid remote ip
+    validate sting ip if it is valid ip
     """
     try:
         socket.inet_aton(ip)
-
-        if ip.startswith("10.") or ip.startswith("172.16.") or ip.startswith("192.168."):
-            return False
 
         if ip.startswith("0."):
             return False
@@ -30,3 +27,17 @@ def is_valid_remote_ip(ip):
         return True
     except socket.error:
         return False
+
+def is_valid_remote_ip(ip):
+    """
+    validate sting ip if it is valid remote ip
+    """
+    valid = is_valid_ip(ip)
+    if not valid:
+        return False
+
+    if ip.startswith("10.") or ip.startswith("172.16.") or ip.startswith("192.168."):
+        return False
+
+    return True
+

@@ -318,19 +318,3 @@ class MultipathManager(BaseDefenseManager):
             path_cost += link_cost
 
         return path_cost
-
-    def add_ports_to_paths(self, paths, first_port, last_port):
-        """
-        Add the ports that connects the switches for all paths
-        """
-        paths_p = []
-        for path in paths:
-            p = {}
-            in_port = first_port
-            for s1, s2 in zip(path[0][:-1], path[0][1:]):
-                out_port = self.topology.edges.get((s1, s2))["port_no"]
-                p[s1] = (in_port, out_port)
-                in_port = self.topology.edges.get((s2, s1))["port_no"]
-            p[path[0][-1]] = (in_port, last_port)
-            paths_p.append(p)
-        return paths_p

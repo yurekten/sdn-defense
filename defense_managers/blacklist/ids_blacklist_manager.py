@@ -125,11 +125,11 @@ class IDSBlacklistManager(BaseDefenseManager):
                 if len(dp_list) > 0:
                     dpid = dp_list[0]
 
-                    self._send_arp_request(dpid, CONTROLLER_IP, self.ids_ip)
+                    self.send_arp_request(dpid, CONTROLLER_IP, self.ids_ip)
                     logger.warning(f"{datetime.now()} - {self.name} - ARP request for {self.ids_ip}")
             else:
                 src_mac = self.ids_eth_address
-                self._send_arp_request(self.ids_dpid, self.ids_ip, self.gateway_ip, self.ids_port_no, src_mac)
+                self.send_arp_request(self.ids_dpid, self.ids_ip, self.gateway_ip, self.ids_port_no, src_mac)
                 logger.warning(f"{datetime.now()} - {self.name} - ARP request for {self.gateway_ip}")
             hub.sleep(1)
 
@@ -213,22 +213,7 @@ class IDSBlacklistManager(BaseDefenseManager):
     def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         pass
 
-    def _send_arp_request(self, dpid, src_ip, dst_ip, in_port=None, src_mac=None):
 
-        arp = build_arp_request(src_ip, dst_ip, src_mac)
-        datapath = self.datapath_list[dpid]
-        ofproto = datapath.ofproto
-        out_port = ofproto.OFPP_FLOOD
-        if in_port is None:
-            in_port = datapath.ofproto.OFPP_LOCAL
-
-        actions = self.sdn_controller_app.get_flood_output_actions(dpid, in_port, out_port)
-
-        buffer_id = 0xffffffff
-        in_port = datapath.ofproto.OFPP_LOCAL
-        out = datapath.ofproto_parser.OFPPacketOut(
-            datapath, buffer_id, in_port, actions, arp.data)
-        datapath.send_msg(out)
 
     def flow_removed(self, msg):
         if not self.enabled:

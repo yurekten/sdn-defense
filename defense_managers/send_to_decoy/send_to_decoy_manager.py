@@ -1,160 +1,145 @@
-import datetime
-import json
 import logging
 import os
-import pathlib
-import socket
+from collections import defaultdict
 from datetime import datetime
+from typing import List
 
 from ryu.lib import hub
+from ryu.lib.packet import ether_types
 
 from configuration import CONTROLLER_IP
 from defense_managers.base_manager import BaseDefenseManager
-from utils.openflow_utils import build_arp_request
+from defense_managers.blacklist.base_item_manager import ManagedItemManager
+from defense_managers.event_parameters import ProcessResult, SDNControllerRequest, SDNControllerResponse, \
+    ManagerResponse, AddFlowAction
+from utils.common_utils import is_valid_remote_ip
 
-CURRENT_PATH = pathlib.Path().absolute()
+CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
-logger.setLevel(level=logging.WARNING)
-
-IDS_IP = "10.0.88.17"
-GATEWAY_IP = "10.0.88.18"
-SOCKET_FILE = "/tmp/suricata_ids.socket"
+DEFAULT_IP_WHITELIST_FILE = os.path.join(CURRENT_PATH, "ip_whitelist.txt")
+DEFAULT_IP_SUPICIOUS_FILE = os.path.join(CURRENT_PATH, "ip_suspicious.txt")
+DECOY_IP_ADDRESS = "10.0.88.11"
 
 
-class SendToDecoyManager(BaseDefenseManager):
+class SendToDecoyManager(ManagedItemManager):
 
-    def __init__(self, sdn_controller_app, send_to_decoy_enabled=True,
-                 socket_file=SOCKET_FILE, ids_ip=IDS_IP, gateway_ip=GATEWAY_IP):
-
-        now = datetime.now()
-        report_folder = "send_to_decoy-%d" % int(now.timestamp())
+    def __init__(self, sdn_controller_app, enabled=True, max_managed_item_count=30000,
+                 default_idle_timeout=10, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE, 
+                 managed_item_file=DEFAULT_IP_SUPICIOUS_FILE, decoy_ip=DECOY_IP_ADDRESS, service_path_index=111):
+        """
+        :param sdn_controller_app: Ryu Controller App
+        :param enabled: If True, managed item manager is enabled
+        """
         name = "send_to_decoy_manager"
-        super(SendToDecoyManager, self).__init__(name, sdn_controller_app, send_to_decoy_enabled, report_folder)
-        self.ids_ip = ids_ip
-        self.gateway_ip = gateway_ip
-        self.socket_file = socket_file
-        self.ids_dpid = None
-        self.ids_port_no = None
-        self.ids_eth_address = None
-        self.ids_arp_request_count = 0
-        self.gateway_dpid = None
-        self.gateway_port_no = None
-        self.gateway_eth_address = None
-        self.gateway_arp_request_count = 0
-
-        self.gateway_ids_path = []
-
-        self.applied_blacklist = {}
-        self.statistics["applied_blacklist"] = {}
-        self.statistics["hit_count"] = 0
-        self.statistics["reset_time"] = datetime.now().timestamp()
-
-        logger.warning("............................................................................")
-        if self.enabled:
-            logger.warning(f"{now} - {self.name} - send_to_decoy_manager is enabled")
-        else:
-            logger.warning(f"{now} - {self.name} - send_to_decoy_manager is initiated but not enabled")
+        super(SendToDecoyManager, self).__init__(name, sdn_controller_app, enabled=enabled,
+                                               max_managed_item_count=max_managed_item_count,
+                                               default_idle_timeout=default_idle_timeout,
+                                               item_whitelist_file=item_whitelist_file,
+                                               managed_item_file=managed_item_file,
+                                               service_path_index=service_path_index)
+    
+        self.decoy_ip = decoy_ip
+        self.decoy_dpid = None
+        self.decoy_dpid_port =  None
+        self.decoy_eth_address = None
 
         if self.enabled:
-            logger.warning(f"{now} - {self.name} - IDS unix socket file: {self.socket_file}")
-            logger.warning(f"{now} - {self.name} - IDS IP address: {self.ids_ip}")
-            logger.warning(f"{now} - {self.name} - Gateway IP address: {self.gateway_ip}")
+            hub.spawn(self._find_decoy)
+        
+    def _find_decoy(self):
 
-            hub.spawn(self._find_ids_and_gateway)
-            hub.spawn(self.listen_unix_stream, self.socket_file)
-        logger.warning("............................................................................")
+        while self.decoy_dpid is None:
+            dp_list = list(self.datapath_list.keys())
+            if len(dp_list) > 0:
+                dpid = dp_list[0]
 
-    def listen_unix_stream(self, socket_file):
+                self.send_arp_request(dpid, CONTROLLER_IP, self.decoy_ip)
+                logger.warning(f"{datetime.now()} - {self.name} - ARP request from {dpid} for {self.decoy_ip}")
 
-        if os.path.exists(socket_file):
-            os.unlink(socket_file)
-
-        with hub.socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.bind(socket_file)
-            sock.listen(1)
-            while True:
-                connection = None
-                try:
-                    # Wait for a connection
-                    logger.warning(f'{datetime.now()} - {self.name} - Waiting for IDS connection')
-                    connection, client_address = sock.accept()
-                    while True:
-                        data = SendToDecoyManager.read_socket(connection)
-                        if data is not None:
-                            for item in data:
-                                print(f'{datetime.now()} -> {item}')
-
-                finally:
-                    if connection is not None:
-                        # Clean up the connection
-                        connection.close()
-
-    @staticmethod
-    def read_socket(socket):
-        buffer = socket.recv(4096 * 2)
-        buf_data = buffer.decode("utf-8").strip()
-        data = buf_data.split('\n')
-
-        result_list = []
-        try:
-            for d in data:
-                if len(d) > 0:
-                    json_data = json.loads(d)
-                    result_list.append(json_data)
-        except Exception as e:
-            print(e)
-            return None
-        return result_list
-
-    def get_status(self):
-        return {"enabled": self.enabled,
-                "report_folder": self.report_folder,
-                "hit_count": self.statistics["hit_count"],
-                "reset_time": datetime.fromtimestamp(self.statistics["reset_time"])
-                }
-
-    def _find_ids_and_gateway(self):
-
-        while self.gateway_dpid is None:
-
-            if self.ids_dpid is None:
-                dp_list = list(self.datapath_list.keys())
-                if len(dp_list) > 0:
-                    dpid = dp_list[0]
-
-                    self._send_arp_request(dpid, CONTROLLER_IP, self.ids_ip)
-                    logger.warning(f"{datetime.now()} - {self.name} - ARP request for {self.ids_ip}")
-            else:
-                src_mac = self.ids_eth_address
-                self._send_arp_request(self.ids_dpid, self.ids_ip, self.gateway_ip, self.ids_port_no, src_mac)
-                logger.warning(f"{datetime.now()} - {self.name} - ARP request for {self.gateway_ip}")
             hub.sleep(1)
 
-    def _send_arp_request(self, dpid, src_ip, dst_ip, in_port=None, src_mac=None):
+    def on_new_packet_detected(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
+        if not self.enabled:
+            return
 
-        arp = build_arp_request(src_ip, dst_ip, src_mac)
-        datapath = self.datapath_list[dpid]
-        ofproto = datapath.ofproto
-        out_port = ofproto.OFPP_FLOOD
-        if in_port is None:
-            in_port = datapath.ofproto.OFPP_LOCAL
+        src_ip = request_ctx.params.src_ip
+        dst_ip = request_ctx.params.dst_ip
+        dpid = request_ctx.params.src_dpid
+        in_port = request_ctx.params.in_port
+        eth_src = request_ctx.params.src_eth
 
-        actions = self.sdn_controller_app.get_flood_output_actions(dpid, in_port, out_port)
+        if self.decoy_dpid is None:
+            if src_ip == self.decoy_ip:
+                    self.decoy_dpid = dpid
+                    self.decoy_dpid_port = in_port
+                    self.decoy_eth_address = eth_src
+                    logger.warning(
+                        f'{datetime.now()} - {self.name} - Decoy is connected to datapath {dpid}, port {in_port}')
+        else:
+            self._send_to_decoy(request_ctx, response_ctx)
 
-        buffer_id = 0xffffffff
-        in_port = datapath.ofproto.OFPP_LOCAL
-        out = datapath.ofproto_parser.OFPPacketOut(
-            datapath, buffer_id, in_port, actions, arp.data)
-        datapath.send_msg(out)
+    def _send_to_decoy(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
+        if not self.enabled:
+            return
+        src_ip = request_ctx.params.src_ip
+        # dst_ip = request_ctx.params.dst_ip
+        # dst_dpid = request_ctx.params.dst_dpid
+        # dst_dpid_out_port = request_ctx.params.dst_dpid_out_port
 
-    def _add_ip_to_blacklist(self, dpid, ip):
-        pass
+        # if src  ip in managed ip list, decide to apply send to decoy
+        # TODO: check dst ip later
+        if src_ip in self.managed_item_list:
+
+            if src_ip not in self.applied_item_list:
+                self.applied_item_list[src_ip] = []
+
+            src_dpid = request_ctx.params.src_dpid
+            src_in_port = request_ctx.params.in_port
+            src = self.host_ip_map[src_ip][2]
+            h1 = self.hosts[src]
+            #only source dpid is processed
+            if h1[0] != src_dpid:
+                return
+            # TODO: Check IP changes port
+            if src_ip in self.applied_item_list and len(self.applied_item_list[src_ip]) > 0:
+                applied_rules = self.applied_item_list[src_ip]
+                if (src_dpid, src_in_port) in applied_rules:
+                    return
+
+            if src_dpid == self.decoy_dpid:
+                pass
+            else:
+                self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip)
+
+                self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, reverse=True)
+
+
 
     def flow_removed(self, msg):
         if not self.enabled:
             return
+        if self.enabled and msg.cookie in self.flow_id_path_dict:
+            nsh_si = None
+            nsh_spi = None
+            if "nsh_spi" in msg.match:
+                nsh_spi = msg.match["nsh_spi"]
+            if "nsh_si" in msg.match:
+                nsh_si = msg.match["nsh_si"]
 
-    def reset_statistics(self):
-        super(SendToDecoyManager, self).reset_statistics()
-        self.statistics["hit_count"] = 0
-        self.statistics["reset_time"] = datetime.now().timestamp()
+            if nsh_spi is not None and nsh_spi == self.spi:
+                flow_tuple = self.flow_id_path_dict[msg.cookie]
+                dpid = flow_tuple[0]
+                in_port = flow_tuple[1]
+                ip = flow_tuple[2]
+                if ip in self.applied_item_list:
+                    if (dpid, in_port) in self.applied_item_list[ip]:
+                        if nsh_si and nsh_si == self.src_si:
+                            logger.warning(f"{datetime.now()} - {self.name} - Sent to decoy service is deleted for suspicious ip {ip} in {dpid} port {in_port}")
+                        else:
+                            logger.warning(f"{datetime.now()} - {self.name} - Sent to decoy reverse service is deleted from {ip} to suspicious ip")
+                        ind = self.applied_item_list[ip].index((dpid, in_port))
+                        del self.applied_item_list[ip][ind]
+                        if len(self.applied_item_list[ip]) == 0:
+                            del self.applied_item_list[ip]
+
+

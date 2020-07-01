@@ -279,7 +279,7 @@ class FlowMultipathTracker(object):
                 self.statistics["end_time"] = datetime.now().timestamp()
             logger.debug(f'{datetime.now()} - {self.flow_info} is sleeping.')
             if self.state != FlowMultipathTracker.DEAD:
-                hub.sleep(1)
+                hub.sleep(self.max_time_period_in_second - 1)
 
         logger.warning(f'{datetime.now()} - {self.flow_info} is finished.')
 
@@ -393,8 +393,6 @@ class FlowMultipathTracker(object):
                 actions = [output_action]
 
             match_actions[node] = (match_ip, actions)
-        if self.forward_with_random_ip:
-            pass
 
         return match_actions
 
