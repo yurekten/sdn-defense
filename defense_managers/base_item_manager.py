@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import datetime
+from random import random
 from typing import List
 
 from ryu.lib.packet import ether_types
@@ -20,7 +21,7 @@ class ManagedItemManager(BaseDefenseManager):
 
     def __init__(self, name, sdn_controller_app, enabled=True, max_managed_item_count=30000,
                  default_idle_timeout=10, item_whitelist_file=DEFAULT_WHITELIST_IP_FILE,
-                 managed_item_file=DEFAULT_MANAGED_IP_FILE, service_path_index=100):
+                 managed_item_file=DEFAULT_MANAGED_IP_FILE, service_path_index=100, random_ip_subnet="10.99.0.0"):
         """
         :param sdn_controller_app: Ryu Controller App
         :param blacklist_enabled: If True, managed item manager is enabled
@@ -49,6 +50,10 @@ class ManagedItemManager(BaseDefenseManager):
         self.statistics[self.applied_items] = {}
         self.statistics["hit_count"] = 0
         self.statistics["reset_time"] = datetime.now().timestamp()
+
+        self.random_ip_subnet = random_ip_subnet
+        sub_address_nodes = random_ip_subnet.split(".")
+        self.random_ip_subnet_prefix = sub_address_nodes[0] + "." + sub_address_nodes[1]
 
         logger.warning("............................................................................")
         if self.enabled:
@@ -154,10 +159,17 @@ class ManagedItemManager(BaseDefenseManager):
         logger.warning(f'{datetime.now()} - {self.name} - Path: {current_path})')
 
         self.managed_paths[flow_tuple] = current_path
-
+        src_rand_ip = None
+        dst_rand_ip = None
+        if not reverse:
+            same = True
+            while same:
+                src_rand_ip = self.create_random_ip()
+                dst_rand_ip = self.create_random_ip()
+                same = src_rand_ip == dst_rand_ip
 
         match_actions = self._create_service_match_actions_for(current_path, src_ip, dst_ip, nsh_spi=self.spi, nsh_si=nsh_si,
-                                                               nsh_c1=88)
+                                                               nsh_c1=88, src_rand_ip=src_rand_ip, dst_rand_ip=dst_rand_ip)
         first = None
         install_path_ordered = {}
         for node in current_path:
@@ -191,17 +203,25 @@ class ManagedItemManager(BaseDefenseManager):
                 self.flow_id_path_dict[flow_id] = flow_tuple
         # self.applied_item_list[src_ip].append((src_dpid, src_in_port))
         self._add_ip_to_list(src_dpid, src_in_port, src_ip)
+        return  (src_rand_ip, dst_rand_ip)
 
-    def _create_service_match_actions_for(self, path, src_ip, dst_ip, nsh_spi=100, nsh_si=100, nsh_c1=88):
+    def create_random_ip(self):
+        return self.random_ip_subnet_prefix + "." + str(random.randint(1, 254)) + "." + str(random.randint(1, 254))
+
+    def _create_service_match_actions_for(self, path, src_ip, dst_ip, nsh_spi=100, nsh_si=100, nsh_c1=88, src_rand_ip=None, dst_rand_ip=None):
         match_actions = {}
         path_size = len(path)
         path_ind = -1
 
+        src_rand_ip = None
+        dst_rand_ip = None
         for node in path:
             path_ind = path_ind + 1
             dp = self.datapath_list[node]
             ofp_parser = dp.ofproto_parser
 
+            original_src_ip = None
+            original_dst_ip = None
             in_port = path[node][0]
             output_action = ofp_parser.OFPActionOutput(path[node][1])
             if path_size > 1:
@@ -225,8 +245,15 @@ class ManagedItemManager(BaseDefenseManager):
                     eth_encap_action = ofp_parser.NXActionEncapEther()
                     nsh_spi_action = ofp_parser.OFPActionSetField(nsh_spi=nsh_spi)
                     nsh_si_action = ofp_parser.OFPActionSetField(nsh_si=nsh_si)
-                    nsh_c1_action = ofp_parser.OFPActionSetField(nsh_c1=100)
-                    actions = [nsh_encap_action, nsh_spi_action, nsh_si_action, nsh_c1_action, eth_encap_action, output_action]
+                    original_src_ip = src_ip
+                    original_dst_ip = original_dst_ip
+                    nsh_c1_action = ofp_parser.OFPActionSetField(nsh_c1=src_ip)
+                    nsh_c1_action = ofp_parser.OFPActionSetField(nsh_c2=dst_ip)
+
+                    change_src_ip = ofp_parser.OFPActionSetField(ipv4_src=src_rand_ip)
+                    change_dst_ip = ofp_parser.OFPActionSetField(ipv4_dst=dst_rand_ip)
+
+                    actions = [nsh_encap_action, nsh_spi_action, nsh_si_action, nsh_c1_action, eth_encap_action, change_src_ip, change_dst_ip, output_action]
 
                 elif path_ind >= path_size - 1:
                     match_ip = ofp_parser.OFPMatch(eth_type_nxm=0x894f, nsh_spi=nsh_spi, nsh_si=nsh_si)
@@ -257,7 +284,7 @@ class ManagedItemManager(BaseDefenseManager):
 
             match_actions[node] = (match_ip, actions)
 
-        return match_actions
+        return match_actions, src_rand_ip, dst_rand_ip
 
     def _add_ip_to_list(self, dpid, in_port, src_ip):
         ip = src_ip

@@ -19,6 +19,13 @@ class RequestParams(object):
         pass
 
 
+class FlowAddedEvent(object):
+    def __init__(self, response_ctx, match, flow, flow_id):
+        self.response_ctx = response_ctx
+        self.flow_id = flow_id
+        self.flow = flow
+        self.match = match
+
 class PacketParams(RequestParams):
 
     def __init__(self, src_dpid=None, in_port=None, out_port=None, src_ip=None, dst_ip=None,

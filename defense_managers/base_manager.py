@@ -5,7 +5,7 @@ import networkx as nx
 
 
 
-from defense_managers.event_parameters import SDNControllerRequest, SDNControllerResponse
+from defense_managers.event_parameters import SDNControllerRequest, SDNControllerResponse, FlowAddedEvent
 from utils.file_utils import save_dict_to_file
 from utils.openflow_utils import build_arp_request
 
@@ -96,4 +96,7 @@ class BaseDefenseManager(ABC):
         pass
 
     def flow_is_deleted(self, dpid, flow_id, caller):
+        pass
+
+    def on_flow_added(self, event : FlowAddedEvent):
         pass

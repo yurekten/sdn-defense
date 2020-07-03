@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import datetime
+from random import random
 
 from ryu.lib import hub
 
@@ -19,7 +20,8 @@ class SendToDecoyManager(ManagedItemManager):
 
     def __init__(self, sdn_controller_app, enabled=True, max_managed_item_count=30000,
                  default_idle_timeout=10, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE,
-                 managed_item_file=DEFAULT_IP_SUPICIOUS_FILE, decoy_ip=DECOY_IP_ADDRESS, service_path_index=111):
+                 managed_item_file=DEFAULT_IP_SUPICIOUS_FILE, decoy_ip=DECOY_IP_ADDRESS, service_path_index=111,
+                 random_ip_subnet="10.99.0.0"):
         """
         :param sdn_controller_app: Ryu Controller App
         :param enabled: If True, managed item manager is enabled
@@ -30,13 +32,12 @@ class SendToDecoyManager(ManagedItemManager):
                                                  default_idle_timeout=default_idle_timeout,
                                                  item_whitelist_file=item_whitelist_file,
                                                  managed_item_file=managed_item_file,
-                                                 service_path_index=service_path_index)
+                                                 service_path_index=service_path_index, random_ip_subnet=random_ip_subnet)
 
         self.decoy_ip = decoy_ip
         self.decoy_dpid = None
         self.decoy_dpid_port = None
         self.decoy_eth_address = None
-
         if self.enabled:
             hub.spawn(self._find_decoy)
 
@@ -72,11 +73,12 @@ class SendToDecoyManager(ManagedItemManager):
         else:
             self._send_to_decoy(request_ctx, response_ctx)
 
+
     def _send_to_decoy(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
         if not self.enabled:
             return
         src_ip = request_ctx.params.src_ip
-        # dst_ip = request_ctx.params.dst_ip
+        dst_ip = request_ctx.params.dst_ip
         # dst_dpid = request_ctx.params.dst_dpid
         # dst_dpid_out_port = request_ctx.params.dst_dpid_out_port
 
@@ -102,7 +104,7 @@ class SendToDecoyManager(ManagedItemManager):
 
             self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip)
 
-            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip,
+            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, dst_ip,
                               reverse=True)
 
     def flow_removed(self, msg):
