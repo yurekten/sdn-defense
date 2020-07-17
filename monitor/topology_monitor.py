@@ -59,6 +59,9 @@ class TopologyMonitor(object):
             self.topology.nodes[switch.id]["port_desc_stats"] = sw_ports
             self.topology.nodes[switch.id]["port_bandwidths"] = port_bandwidths
 
+        if self.no_flood_ports is not None:
+            self._recalculate_flood_ports()
+
     def _recalculate_flood_ports(self):
         nodes = list(self.topology.nodes)
         edges = list(self.topology.edges)
@@ -109,6 +112,8 @@ class TopologyMonitor(object):
             self.topology.remove_edge(s1.dpid, s2.dpid)
         if (s2.dpid, s1.dpid) in self.topology.edges:
             self.topology.remove_edge(s2.dpid, s1.dpid)
+        if self.no_flood_ports is not None:
+            self._recalculate_flood_ports()
 
     def link_add_handler(self, ev):
         if logger.isEnabledFor(level=logging.INFO):

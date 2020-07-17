@@ -3,7 +3,10 @@ import os
 import pathlib
 from collections import defaultdict
 from datetime import datetime
+from threading import RLock
+from typing import List
 
+from defense_managers.event_parameters import AddFlowAction, SDNControllerResponse, SDNControllerRequest
 from utils.file_utils import save_dict_to_file
 from utils.openflow_utils import copy_remove_msg_data
 
@@ -14,12 +17,16 @@ logger.setLevel(level=logging.WARNING)
 
 class FlowMonitor(object):
 
-    def __init__(self, report_folder, watch_generated_flows, *args, **kwargs):
+    def __init__(self, report_folder, watch_generated_flows, datapath_list, listeners, *args, **kwargs):
         super(FlowMonitor, self).__init__(*args, **kwargs)
 
         self.name = "flow_monitor"
-
+        self.datapath_list = datapath_list
+        self.listeners = listeners
         self.flows = defaultdict()
+        self.lock = RLock()
+        self.sw_cookie = defaultdict()
+        self.unused_cookie = 0x0010000
 
         self.statistics = defaultdict()
 
@@ -43,19 +50,18 @@ class FlowMonitor(object):
         #    hub.spawn_after(5, self._save_statistics_periodically)
 
     def add_to_flow_list(self, dpid, flow_id, match, actions, priority, idle_timeout, hard_timeout):
-        if self.watch_generated_flows:
-            if dpid not in self.statistics["flows"]:
-                self.statistics["flows"][dpid] = {}
+        if dpid not in self.statistics["flows"]:
+            self.statistics["flows"][dpid] = {}
 
-            self.statistics["flows"][dpid][flow_id] = {"match": match,
-                                                       "actions": actions,
-                                                       "priority": priority,
-                                                       "idle_timeout": idle_timeout,
-                                                       "hard_timeout": hard_timeout,
-                                                       "created": datetime.now().timestamp(),
-                                                       "datapath_id": dpid
-                                                       }
-            self.statistics["created-flow-count"] = self.statistics["created-flow-count"] + 1
+        self.statistics["flows"][dpid][flow_id] = {"match": match.__dict__,
+                                                   "actions": actions,
+                                                   "priority": priority,
+                                                   "idle_timeout": idle_timeout,
+                                                   "hard_timeout": hard_timeout,
+                                                   "created": datetime.now().timestamp(),
+                                                   "datapath_id": dpid
+                                                   }
+        self.statistics["created-flow-count"] = self.statistics["created-flow-count"] + 1
 
     def save_statistics(self):
         now = int(datetime.now().timestamp())
@@ -86,7 +92,8 @@ class FlowMonitor(object):
                 if group_id is not None:
                     delete_group = parser.OFPGroupMod(datapath=dp, command=ofproto.OFPGC_DELETE,
                                                       group_id=group_id)
-                    dp.send_msg(delete_group)
+                    with self.lock:
+                        dp.send_msg(delete_group)
 
                 del self.flows[dp.id][msg.cookie]
 
@@ -96,3 +103,158 @@ class FlowMonitor(object):
                 self.statistics["removed-flow-count"] = self.statistics["removed-flow-count"] + 1
                 stats = self.statistics["flows"][msg.datapath.id][msg.cookie]
                 copy_remove_msg_data(msg, stats)
+
+    def delete_flow(self, dpid, flow_id, caller):
+
+        datapath = self.datapath_list[dpid]
+        self.delete_flow_with_datapath(datapath=datapath, cookie=flow_id)
+
+        for manager in self.listeners:
+            if caller != manager:
+                manager.flow_is_deleted(dpid, flow_id, caller)
+
+    def delete_flow_with_datapath(self, datapath, cookie=0, cookie_mask=0xFFFFFFFFFFFFFFFF):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        mod = parser.OFPFlowMod(datapath=datapath,
+                                command=ofproto.OFPFC_DELETE,
+                                out_port=ofproto.OFPP_ANY,
+                                out_group=ofproto.OFPG_ANY,
+                                table_id=ofproto.OFPTT_ALL,
+                                cookie=cookie,
+                                cookie_mask=cookie_mask,
+                                )
+        with self.lock:
+            datapath.send_msg(mod)
+    def _add_default_flow(self, datapath, priority, match, actions, buffer_id=None,
+                          hard_timeout=0, idle_timeout=0, flags=0, cookie=0, table_id=0):
+
+        return self._add_flow(datapath, priority, match, actions, buffer_id=buffer_id, hard_timeout=hard_timeout,
+                              flags=flags, cookie=cookie, table_id=table_id, idle_timeout=idle_timeout,
+                              caller=self, manager=self, related_group_id=None, request_ctx=None, response_ctx=None,
+                              inform_managers=False)
+
+    def add_managed_flow(self, add_flow_action: AddFlowAction, request_ctx=None, response_ctx=None,
+                         inform_managers=True):
+        flow = add_flow_action
+        manager = flow.manager
+        caller = flow.caller
+        datapath = flow.datapath
+        hard_timeout = flow.hard_timeout
+        idle_timeout = flow.idle_timeout
+        cookie = flow.cookie
+        priority = flow.priority
+        match = flow.match
+        actions = flow.actions
+        buffer_id = flow.buffer_id
+        flags = flow.flags
+        table_id = flow.table_id
+        related_group_id = flow.related_group_id
+
+        if manager is None:
+            manager = []
+        elif not isinstance(manager, List):
+            manager = [manager]
+
+        if caller is None:
+            caller = []
+        elif not isinstance(caller, List):
+            caller = [caller]
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        flow_id = cookie
+        if cookie == 0:
+            flow_id = self._get_next_flow_cookie(datapath.id)
+
+        # manager generates it
+        if inform_managers:
+            new_flow = AddFlowAction(datapath, priority, match, actions)
+            new_flow.buffer_id = buffer_id
+            new_flow.hard_timeout = hard_timeout
+            new_flow.flags = flags
+            new_flow.cookie = cookie
+            new_flow.table_id = table_id
+            new_flow.idle_timeout = idle_timeout
+            new_flow.caller = caller
+            new_flow.manager = manager
+            new_request_ctx = SDNControllerRequest(None, new_flow)
+
+            response_ctx = SDNControllerResponse(request_ctx=new_request_ctx)
+            self.on_adding_auto_generated_flow(new_request_ctx, response_ctx)
+            respose_actions = []
+            for item in response_ctx.responses:
+                responses = response_ctx.responses[item]
+                for item_action in responses.action_list:
+                    respose_actions.extend(item_action.actions)
+
+            actions.extend(respose_actions)
+
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
+        if buffer_id:
+            mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id,
+                                    priority=priority, match=match, idle_timeout=idle_timeout,
+                                    instructions=inst, hard_timeout=hard_timeout, flags=flags, cookie=flow_id,
+                                    table_id=table_id)
+        else:
+            mod = parser.OFPFlowMod(datapath=datapath, priority=priority, idle_timeout=idle_timeout,
+                                    match=match, instructions=inst, hard_timeout=hard_timeout, flags=flags,
+                                    cookie=flow_id, table_id=table_id)
+
+        with self.lock:
+            datapath.send_msg(mod)
+        flows = self.flows
+        if datapath.id not in flows:
+            flows[datapath.id] = defaultdict()
+
+        flows[datapath.id][flow_id] = {"packet": mod, "caller": caller, "manager": manager,
+                                       "group_id": related_group_id}
+        return flow_id
+
+    def _add_flow(self, datapath, priority, match, actions, buffer_id=None, hard_timeout=0, idle_timeout=0, flags=0,
+                  cookie=0,
+                  table_id=0, caller=None, manager=None, related_group_id=None, request_ctx=None, response_ctx=None,
+                  inform_managers=True):
+
+        new_flow = AddFlowAction(datapath, priority, match, actions)
+        new_flow.buffer_id = buffer_id
+        new_flow.hard_timeout = hard_timeout
+        new_flow.flags = flags
+        new_flow.cookie = cookie
+        new_flow.table_id = table_id
+        new_flow.idle_timeout = idle_timeout
+        new_flow.caller = caller
+        new_flow.manager = manager
+        new_flow.related_group_id = related_group_id
+        return self.add_managed_flow(new_flow, request_ctx, response_ctx, inform_managers)
+
+    def on_adding_auto_generated_flow(self, request_ctx, response_ctx):
+
+        for manager in self.listeners:
+            manager.on_adding_auto_generated_flow(request_ctx, response_ctx)
+
+    def _get_next_flow_cookie(self, sw_id):
+        if sw_id not in self.sw_cookie:
+            self.sw_cookie[sw_id] = defaultdict()
+            self.sw_cookie[sw_id]["sw_cookie"] = self.unused_cookie
+            self.sw_cookie[sw_id]["last_flow_cookie"] = self.unused_cookie
+            self.sw_cookie[sw_id]["last_group_id"] = self.unused_cookie
+            self.unused_cookie = self.unused_cookie + 0x0010000
+
+        self.sw_cookie[sw_id]["last_flow_cookie"] = self.sw_cookie[sw_id]["last_flow_cookie"] + 1
+
+        return self.sw_cookie[sw_id]["last_flow_cookie"]
+
+    def _get_next_group_id(self, sw_id):
+
+        if sw_id not in self.sw_cookie:
+            self.sw_cookie[sw_id] = defaultdict()
+            self.sw_cookie[sw_id]["sw_cookie"] = self.unused_cookie
+            self.sw_cookie[sw_id]["last_flow_cookie"] = self.unused_cookie
+            self.sw_cookie[sw_id]["last_group_id"] = self.unused_cookie
+            self.unused_cookie = self.unused_cookie + 0x0010000
+
+        self.sw_cookie[sw_id]["last_group_id"] = self.sw_cookie[sw_id]["last_group_id"] + 1
+
+        return self.sw_cookie[sw_id]["last_group_id"]

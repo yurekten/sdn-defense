@@ -1,3 +1,3 @@
 #!/bin/bash
 
-python3 ./application_ryu.py
+python3.6 ./application_ryu.py

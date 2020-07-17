@@ -16,14 +16,14 @@ def extract_data():
                     data = json.load(json_file)
                     stats["files"].append((name, data,))
 
-    if len(stats["files"]) >= 2:
+    if len(stats["files"]) >= 1:
         last_stats = sorted(stats["files"], key=lambda x: x[0])[-2:]
         stat = last_stats[0][1]
         stat_file = last_stats[0][0]
         print(stat_file)
-        all_results = get_all_results(stat)
+        all_results = get_all_results(list(stat.values())[0])
         all_results = sorted(all_results, key=lambda x: x[1])
-        dp_name = "1005"
+        dp_name = "1001"
         dp1_results = [n for n in all_results if n[1] == dp_name]
 
         dp1_pkt_count = sum([item[3] for item in dp1_results])
@@ -60,11 +60,22 @@ def add_dp_results(flows, dp_name, results, rule_set_id):
     flow = flows[flow_id]
     byte_count = 0
     packet_count = 0
+    src_ip = ""
+    dst_ip = ""
+    if "flow_params" in flow and flow["flow_params"] is not None:
+        match = flow["flow_params"][1]
+
+        for item in match["_fields2"]:
+            if item[0] == "ipv4_src":
+                src_ip = item[1]
+            if item[0] == "ipv4_dst":
+                dst_ip = item[1]
+
     if "packet_count" in flow and flow["packet_count"] is not None:
         packet_count = flow["packet_count"]
     if "byte_count" in flow and flow["byte_count"] is not None:
         byte_count = flow["byte_count"]
-    results.append((rule_set_id, dp_name, flow_id, packet_count, byte_count))
+    results.append((rule_set_id, dp_name, flow_id, packet_count, byte_count, src_ip, dst_ip))
 
 
 if __name__ == '__main__':

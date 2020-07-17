@@ -1,6 +1,7 @@
 import logging
 import pathlib
 import random
+import threading
 import time
 from collections import defaultdict, Counter
 from datetime import datetime
@@ -277,9 +278,13 @@ class FlowMultipathTracker(object):
                 self._set_state(FlowMultipathTracker.DEAD)
                 self._reset_tracker()
                 self.statistics["end_time"] = datetime.now().timestamp()
-            logger.debug(f'{datetime.now()} - {self.flow_info} is sleeping.')
-            if self.state != FlowMultipathTracker.DEAD:
-                hub.sleep(self.max_time_period_in_second - 1)
+            #if self.state != FlowMultipathTracker.DEAD:
+            logger.debug(f'{datetime.now()} - {self.flow_info} is sleeping. {self.max_time_period_in_second} seconds')
+            #exit_flag = hub.Event()
+            #exit_flag.wait(timeout=(self.max_time_period_in_second - 1))
+            hub.sleep(self.max_time_period_in_second - self.max_time_period_in_second/2)
+            #time.sleep(self.max_time_period_in_second - 1)
+            logger.debug(f'{datetime.now()} - {self.flow_info} is waking up.')
 
         logger.warning(f'{datetime.now()} - {self.flow_info} is finished.')
 
@@ -306,7 +311,7 @@ class FlowMultipathTracker(object):
         timeout = self.max_time_period_in_second
 
         selected_path = self.paths_with_ports[current_path_index]
-        rule_set_id = self._create_flow_rules(selected_path, priority, idle_timeout=self.max_time_period_in_second)
+        rule_set_id = self._create_flow_rules(selected_path, priority, idle_timeout=(self.max_time_period_in_second -1))
 
         if logger.isEnabledFor(logging.WARNING):
             now = datetime.now()
@@ -435,7 +440,7 @@ class FlowMultipathTracker(object):
             new_flow.idle_timeout = idle_timeout
             new_flow.caller = self
             new_flow.manager = self.caller_app
-            flow_id_result = self.flow_coordinator.add_managed_flow(new_flow)
+            flow_id_result = self.flow_coordinator.flow_monitor.add_managed_flow(new_flow)
 
             if not isinstance(flow_id_result, List):
                 flow_id_result = [flow_id_result]
@@ -448,6 +453,6 @@ class FlowMultipathTracker(object):
                 stats[flow_id]["packet_count"] = None
                 stats[flow_id]["byte_count"] = None
                 self.flow_id_rule_set[flow_id] = self.rule_set_id
-                stats[flow_id]["flow_params"] = (node, match, actions)
+                stats[flow_id]["flow_params"] = (node, match.__dict__, actions)
 
         return self.rule_set_id
