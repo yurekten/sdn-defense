@@ -1,5 +1,5 @@
 import abc
-from scapy.layers.inet import IP, ICMP
+from scapy.layers.inet import IP, ICMP, UDP
 from scapy.layers.l2 import Ether
 from scapy.all import *
 from threading import Thread, Event
@@ -68,9 +68,11 @@ class PingDecoy(Sniffer):
 
     def process_packet(self, pkt):
         #print("Crafting ICMP PING reply")
+        #if (pkt.haslayer(UDP)):
+            #pydevd_pycharm.settrace('192.168.1.110', port=54321, stdoutToServer=True, stderrToServer=True)
         if (pkt.haslayer(ICMP)):
 
-            #pydevd_pycharm.settrace('172.16.3.87', port=54321, stdoutToServer = True, stderrToServer = True)
+
             eth_pkt = pkt.getlayer(Ether)
             if self.self_mac != eth_pkt.src:
                 src_icmp = pkt.getlayer(ICMP)

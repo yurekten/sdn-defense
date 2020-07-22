@@ -1,5 +1,8 @@
+import csv
 import logging
 import os
+import random
+import time
 from collections import defaultdict
 from datetime import datetime
 from threading import RLock
@@ -131,6 +134,8 @@ class MultipathManager(BaseDefenseManager):
     def get_output_port_for_packet(self, src, first_port, dst, last_port, ip_src, ip_dst, current_dpid):
         if not self.enabled:
             return None
+
+        self.find_pairs_and_calculate()
         if (src, first_port, dst, last_port, ip_src, ip_dst) in self.multipath_trackers:
             multipath_tracker = self.multipath_trackers[(src, first_port, dst, last_port, ip_src, ip_dst)]
             output_port = multipath_tracker.get_output_port_for_packet(current_dpid)
@@ -285,6 +290,63 @@ class MultipathManager(BaseDefenseManager):
         self.all_possible_paths[(src, dst)] = all_paths
 
         return self.all_possible_paths[(src, dst)]
+
+    def find_pairs_and_calculate(self):
+        all_nodes = set(self.topology.nodes)
+        pairs = list()
+        for node in self.topology.nodes:
+            n = set(self.topology.neighbors(node))
+            diff = all_nodes - n
+            for other in diff:
+                if other != node:
+                    if int(node) > int(other):
+                        pair = (other, node)
+                    else:
+                        pair = (node, other)
+                    if pair not in pairs:
+                        pairs.append(pair)
+        pairs.extend(pairs)
+        pairs.extend(pairs)
+        statistics = list()
+        for j in range(5, len(pairs) + 1, 5):
+            start = time.perf_counter()
+            for i in range(j):
+                self.calc_all_pairs(pairs[i][0], pairs[i][1], 50)
+            stop = time.perf_counter()
+            statistics.append((j, (stop-start)))
+
+        with open('delay-time.csv', mode='w') as out_file:
+            file_writer = csv.writer(out_file, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            for res in statistics:
+                file_writer.writerow(list(res))
+
+    def calc_all_pairs(self, src, dst, max_random_paths):
+
+        path_results = nx.all_simple_paths(self.topology, source=src, target=dst, cutoff=8)
+
+        paths = []
+        for path in path_results:
+            paths.append(path)
+
+        selected_paths = MultipathManager.select_superset_paths(paths)
+        all_paths = []
+        for path in selected_paths:
+            path_cost = self._get_path_cost(path)
+            all_paths.append((path, path_cost))
+
+        self.all_possible_paths[(src, dst)] = all_paths
+
+        paths = self.all_possible_paths[(src, dst)]
+
+        paths_count = len(paths) if len(paths) < max_random_paths else max_random_paths
+
+        sorted_paths = sorted(paths, key=lambda x: x[1])[0:paths_count]
+
+        pw = [item[1] for item in sorted_paths]
+
+        path_indices = range(0, len(sorted_paths))
+        path_choices = random.choices(path_indices, weights=pw, k=100)
+        return path_choices
 
     @staticmethod
     def select_superset_paths(paths):

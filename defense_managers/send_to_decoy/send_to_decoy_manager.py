@@ -19,9 +19,9 @@ DECOY_IP_ADDRESS = "10.0.88.11"
 class SendToDecoyManager(ManagedItemManager):
 
     def __init__(self, sdn_controller_app, enabled=True, max_managed_item_count=30000,
-                 default_idle_timeout=10, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE,
+                 default_idle_timeout=100, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE,
                  managed_item_file=DEFAULT_IP_SUPICIOUS_FILE, decoy_ip=DECOY_IP_ADDRESS, service_path_index=111,
-                 random_ip_subnet="10.99.0.0"):
+                 default_priority=60000, random_ip_subnet="10.99.0.0"):
         """
         :param sdn_controller_app: Ryu Controller App
         :param enabled: If True, managed item manager is enabled
@@ -38,6 +38,7 @@ class SendToDecoyManager(ManagedItemManager):
         self.decoy_dpid = None
         self.decoy_dpid_port = None
         self.decoy_eth_address = None
+        self.default_priority = default_priority
         if self.enabled:
             hub.spawn(self._find_decoy)
 
@@ -102,9 +103,9 @@ class SendToDecoyManager(ManagedItemManager):
                 if (src_dpid, src_in_port) in applied_rules:
                     return
 
-            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip)
+            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, self.default_priority)
 
-            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, dst_ip,
+            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, dst_ip, self.default_priority,
                               reverse=True)
 
     def flow_removed(self, msg):

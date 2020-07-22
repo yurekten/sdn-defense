@@ -15,13 +15,13 @@ CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
 DEFAULT_IP_WHITELIST_FILE = os.path.join(CURRENT_PATH, "ip_whitelist.txt")
 DEFAULT_IP_QUARANTINE_FILE = os.path.join(CURRENT_PATH, "ip_quarantine.txt")
-ACCESSIBLE_SERVER_IP = "10.0.88.12"
+ACCESSIBLE_SERVER_IP = "10.0.88.11"
 
 
 class QuarantineManager(ManagedItemManager):
 
     def __init__(self, sdn_controller_app, enabled=True, max_managed_item_count=30000,
-                 default_idle_timeout=0, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE,
+                 default_idle_timeout=0, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE, default_priority =55000,
                  managed_item_file=DEFAULT_IP_QUARANTINE_FILE, accessible_server_ip=ACCESSIBLE_SERVER_IP, service_path_index=120):
         """
         :param sdn_controller_app: Ryu Controller App
@@ -39,7 +39,7 @@ class QuarantineManager(ManagedItemManager):
         self.server_dpid = None
         self.server_dpid_port = None
         self.server_eth_address = None
-
+        self.priority = default_priority
         if self.enabled:
             hub.spawn(self._find_server)
 
@@ -108,17 +108,17 @@ class QuarantineManager(ManagedItemManager):
                 manager_response = ManagerResponse(self, ProcessResult.CONTINUE)
             else:
                 manager_response = ManagerResponse(self, ProcessResult.FINISH)
-            flow = self.create_drop_rule(src_dpid, src_in_port, src_ip, 50000, source_ip=True)
+            flow = self.create_drop_rule(src_dpid, src_in_port, src_ip, self.priority, source_ip=True)
             manager_response.action_list.append(flow)
 
 
-            flow = self.create_drop_rule(src_dpid, src_in_port, src_ip, 50000, source_ip=False)
+            flow = self.create_drop_rule(src_dpid, src_in_port, src_ip, self.priority, source_ip=False)
             manager_response.action_list.append(flow)
 
-            flow = self.access_to_server_rule(src_dpid, src_in_port, src_ip, 50000, to_server=True)
+            flow = self.access_to_server_rule(src_dpid, src_in_port, src_ip, self.priority, to_server=True)
             manager_response.action_list.append(flow)
 
-            flow = self.access_to_server_rule(src_dpid, src_in_port, src_ip, 50000, to_server=False)
+            flow = self.access_to_server_rule(src_dpid, src_in_port, src_ip, self.priority, to_server=False)
             manager_response.action_list.append(flow)
             self._add_ip_to_list(src_dpid, src_in_port, src_ip)
 

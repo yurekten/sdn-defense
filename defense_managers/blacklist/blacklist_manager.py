@@ -19,7 +19,7 @@ DEFAULT_IP_BLACKLIST_FILE = os.path.join(CURRENT_PATH, "ip_blacklist.txt")
 class BlacklistManager(ManagedItemManager):
 
     def __init__(self, sdn_controller_app, enabled=True, max_managed_item_count=30000,
-                 default_idle_timeout=10, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE, managed_item_file=DEFAULT_IP_BLACKLIST_FILE):
+                 default_idle_timeout=100, item_whitelist_file=DEFAULT_IP_WHITELIST_FILE, managed_item_file=DEFAULT_IP_BLACKLIST_FILE):
         """
         :param sdn_controller_app: Ryu Controller App
         :param enabled: If True, managed item manager is enabled
@@ -98,8 +98,8 @@ class BlacklistManager(ManagedItemManager):
         hit_count = self.statistics[self.applied_items][ip][dpid]["hit_count"]
         self.statistics[self.applied_items][ip][dpid]["hit_count"] = hit_count + 1
 
-        if logger.isEnabledFor(level=logging.WARNING):
-            logger.warning(f"{datetime.now()} - {self.name} - blaclist ip: {ip} in {dpid}")
+        #if logger.isEnabledFor(level=logging.ERROR):
+        #    logger.error(f"{datetime.now()} - {self.name} - blaclist ip: {ip} in {dpid}")
 
     def flow_removed(self, msg):
 
