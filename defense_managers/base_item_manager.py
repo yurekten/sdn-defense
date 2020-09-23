@@ -136,7 +136,7 @@ class ManagedItemManager(BaseDefenseManager):
         self.statistics["hit_count"] = 0
         self.statistics["reset_time"] = datetime.now().timestamp()
 
-    def create_flows(self, src_dpid_, src_in_port_, src_ip_, dst_dpid_, dst_dpid_port_, dst_ip_, priority, reverse=False):
+    def create_flows(self, src_dpid_, src_in_port_, src_ip_, dst_dpid_, dst_dpid_port_, dst_ip_, priority, nsh_spi, nsh_si, reverse=False):
         if reverse:
             dst_dpid = src_dpid_
             dst_dpid_port = src_in_port_
@@ -144,7 +144,7 @@ class ManagedItemManager(BaseDefenseManager):
             src_dpid = dst_dpid_
             src_in_port = dst_dpid_port_
             src_ip = dst_ip_
-            nsh_si = self.dst_si
+            #nsh_si = self.dst_si
         else:
             src_dpid = src_dpid_
             src_in_port = src_in_port_
@@ -152,18 +152,18 @@ class ManagedItemManager(BaseDefenseManager):
             dst_dpid = dst_dpid_
             dst_dpid_port = dst_dpid_port_
             dst_ip = dst_ip_
-            nsh_si = self.src_si
+            #nsh_si = self.src_si
 
         flow_tuple = (src_dpid, src_in_port, src_ip, dst_dpid, dst_dpid_port, dst_ip)
         current_path = self.get_shortest_flow(src_dpid, src_in_port, dst_dpid, dst_dpid_port)
 
 
-        logger.warning(f'{datetime.now()} - {self.name} - Path: {current_path})')
+        #logger.error(f'{datetime.now()} - {self.name} - Path: {current_path})')
 
         self.managed_paths[flow_tuple] = current_path
 
         match_actions, src_ip, dst_ip = self._create_service_match_actions_for(current_path, src_ip, dst_ip,
-                                                                                         nsh_spi=self.spi, nsh_si=nsh_si)
+                                                                               nsh_spi, nsh_si)
         first = None
         install_path_ordered = {}
         for node in current_path:
@@ -209,7 +209,7 @@ class ManagedItemManager(BaseDefenseManager):
     def create_random_ip(self):
         return self.random_ip_subnet_prefix + "." + str(random.randint(1, 254)) + "." + str(random.randint(1, 254))
 
-    def _create_service_match_actions_for(self, path, src_ip, dst_ip, nsh_spi=100, nsh_si=100):
+    def _create_service_match_actions_for(self, path, src_ip, dst_ip, nsh_spi=100, nsh_si=255):
         match_actions = {}
         path_size = len(path)
         path_ind = -1
@@ -303,5 +303,5 @@ class ManagedItemManager(BaseDefenseManager):
         hit_count = self.statistics[self.applied_items][ip][dpid]["hit_count"]
         self.statistics[self.applied_items][ip][dpid]["hit_count"] = hit_count + 1
 
-        if logger.isEnabledFor(level=logging.WARNING):
-            logger.warning(f"{datetime.now()} - {self.name} - Suspicious ip: {ip} in {dpid} port {in_port}")
+        #if logger.isEnabledFor(level=logging.ERROR):
+        #    logger.warning(f"{datetime.now()} - {self.name} - Suspicious ip: {ip} in {dpid} port {in_port}")

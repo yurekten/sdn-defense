@@ -36,11 +36,11 @@ class MultipathManager(BaseDefenseManager):
         self.multipath_tracker_params = {
             # if multipath_enabled is enabled, it defines parameters of multipath trackers
             'forward_with_random_ip': True,  # random ip generation is activated.
-            'random_ip_for_each_hop': False,  # if False, first node generates random ip
+            'random_ip_for_each_hop': True,  # if False, first node generates random ip
             'random_ip_subnet': "10.93.0.0",  # random ip subnet, default mask is 255.255.0.0
             'max_random_paths': 200,  # maximum random paths used in multipath trackers
             'max_installed_path_count': 2,  # maximum flow count installed in switch for each path
-            'max_time_period_in_second': 4,  # random path expire time in seconds.
+            'max_time_period_in_second': 5,  # random path expire time in seconds.
             'lowest_flow_priority': 20000,  # minimum flow priority in random path flows
         }
 
@@ -135,7 +135,7 @@ class MultipathManager(BaseDefenseManager):
         if not self.enabled:
             return None
 
-        self.find_pairs_and_calculate()
+        #self.find_pairs_and_calculate()
         if (src, first_port, dst, last_port, ip_src, ip_dst) in self.multipath_trackers:
             multipath_tracker = self.multipath_trackers[(src, first_port, dst, last_port, ip_src, ip_dst)]
             output_port = multipath_tracker.get_output_port_for_packet(current_dpid)
@@ -276,6 +276,12 @@ class MultipathManager(BaseDefenseManager):
             return [([src], 1)]
 
         path_results = nx.all_simple_paths(self.topology, source=src, target=dst, cutoff=16)
+        if logger.isEnabledFor(level=logging.WARNING):
+            shortest_path  = nx.shortest_path(self.topology, source=src)
+            nodes = []
+            for node in shortest_path:
+                nodes.append(node)
+            logger.warning(f"Shortest path: {nodes}")
 
         paths = []
         for path in path_results:

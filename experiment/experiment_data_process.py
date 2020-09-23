@@ -23,7 +23,7 @@ def extract_data():
         print(stat_file)
         all_results = get_all_results(list(stat.values())[0])
         all_results = sorted(all_results, key=lambda x: x[1])
-        dp_name = "1001"
+        dp_name = "1005"
         dp1_results = [n for n in all_results if n[1] == dp_name]
 
         dp1_pkt_count = sum([item[3] for item in dp1_results])

@@ -63,6 +63,8 @@ class SDNDefenseApp(app_manager.RyuApp):
         self.host_ip_map = {}
         self.mac_to_port = {}
 
+        self.initial = True
+
         now = int(datetime.now().timestamp())
 
         self.topology_monitor = TopologyMonitor()
@@ -204,25 +206,42 @@ class SDNDefenseApp(app_manager.RyuApp):
             dst_dpid = self.host_ip_map[dst_ip][0]
             dst_dpid_out_port = self.host_ip_map[dst_ip][1]
 
-        #start = time.perf_counter()
-        request_params = PacketParams(src_dpid=dpid, in_port=in_port, src_ip=src_ip,
-                                      dst_ip=dst_ip, src_eth=src, dst_eth=dst,
-                                      dst_dpid=dst_dpid, dst_dpid_out_port=dst_dpid_out_port, default_match=default_match)
-        request_ctx = SDNControllerRequest(msg, request_params)
+        if src_ip != "10.0.88.5":
+            request_params = PacketParams(src_dpid=dpid, in_port=in_port, src_ip=src_ip,
+                                          dst_ip=dst_ip, src_eth=src, dst_eth=dst,
+                                          dst_dpid=dst_dpid, dst_dpid_out_port=dst_dpid_out_port,
+                                          default_match=default_match)
+            request_ctx = SDNControllerRequest(msg, request_params)
 
-        finish = self.new_packet_detected(request_ctx)
+            finish = self.new_packet_detected(request_ctx)
+        elif self.initial:
+            finish = False
+            self.initial = False
+            stats = {}
+            for i in range(5, 401, 5):
 
-        # if src_ip in self.blacklist_manager.managed_item_list and src_ip not in self.q_stats:
-        #     stop = time.perf_counter()
-        #     self.q_stats[src_ip] = 1000*(stop -start)
-        #     if FACTOR == len(self.q_stats):
-        #         with open('blacklist-quarantine-time.csv', mode='w') as out_file:
-        #             file_writer = csv.writer(out_file, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        #             sum = 0
-        #             for res, val in self.q_stats.items():
-        #                 sum = sum + val
-        #
-        #             file_writer.writerow([len(self.q_stats), sum])
+                start = time.perf_counter()
+                for j in range(0, i, 5):
+                        request_params = PacketParams(src_dpid=dpid, in_port=in_port, src_ip=src_ip,
+                                                      dst_ip=dst_ip, src_eth=src, dst_eth=dst,
+                                                      dst_dpid=dst_dpid, dst_dpid_out_port=dst_dpid_out_port, default_match=default_match)
+                        request_ctx = SDNControllerRequest(msg, request_params)
+
+                        finish = self.new_packet_detected(request_ctx)
+                #logger.warning(f"Iteration {i}")
+                stop = time.perf_counter()
+                stats[i] = (stop - start)
+
+                # if src_ip in self.blacklist_manager.managed_item_list and src_ip not in self.q_stats:
+                #     stop = time.perf_counter()
+                #     self.q_stats[src_ip] = 1000*(stop -start)
+                #     if FACTOR == len(self.q_stats):
+            with open('sfc_stats.csv', mode='w') as out_file:
+                file_writer = csv.writer(out_file, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+                for res, val in stats.items():
+                    file_writer.writerow([res, val])
+        else:
+            finish = False
 
         if finish:
             return
@@ -279,7 +298,7 @@ class SDNDefenseApp(app_manager.RyuApp):
         hash_val = str(dpid) + ":" + str(in_port) + ":" + str(src_ip) + ":" + str(dst_ip)
         return hash_val
 
-    @cached(cache=TTLCache(maxsize=1024, ttl=1), key=request_ctx_hash)
+    #@cached(cache=TTLCache(maxsize=1024, ttl=1), key=request_ctx_hash)
     def new_packet_detected(self, request_ctx):
         response_ctx = SDNControllerResponse(request_ctx=request_ctx)
 

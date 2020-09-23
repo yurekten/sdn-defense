@@ -80,9 +80,10 @@ class SendToDecoyManager(ManagedItemManager):
             return
         src_ip = request_ctx.params.src_ip
         dst_ip = request_ctx.params.dst_ip
-        # dst_dpid = request_ctx.params.dst_dpid
-        # dst_dpid_out_port = request_ctx.params.dst_dpid_out_port
-
+        dst_dpid = request_ctx.params.dst_dpid
+        dst_dpid_out_port = request_ctx.params.dst_dpid_out_port
+        if dst_dpid_out_port is None:
+            return
         # if src  ip in managed ip list, decide to apply send to decoy
         # TODO: check dst ip later
         if src_ip in self.managed_item_list:
@@ -98,15 +99,23 @@ class SendToDecoyManager(ManagedItemManager):
             if h1[0] != src_dpid:
                 return
             # TODO: Check IP changes port
-            if src_ip in self.applied_item_list and len(self.applied_item_list[src_ip]) > 0:
-                applied_rules = self.applied_item_list[src_ip]
-                if (src_dpid, src_in_port) in applied_rules:
-                    return
+            #if src_ip in self.applied_item_list and len(self.applied_item_list[src_ip]) > 0:
+            #    applied_rules = self.applied_item_list[src_ip]
+            #    if (src_dpid, src_in_port) in applied_rules:
+            #        return
 
-            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, self.default_priority)
+            nsh_spi = self.spi
+            nsh_si = self.src_si
+            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, dst_ip, nsh_spi, nsh_si, self.default_priority)
+            nsh_si = self.src_si - 1
+            #self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, dst_ip, self.default_priority,
+            #                  reverse=True)
 
-            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, dst_ip, self.default_priority,
+            self.create_flows(self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, dst_dpid, dst_dpid_out_port, dst_ip, nsh_spi, nsh_si, self.default_priority)
+            nsh_si = self.src_si - 2
+            self.create_flows(self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, dst_dpid, dst_dpid_out_port, dst_ip, nsh_spi, nsh_si, self.default_priority,
                               reverse=True)
+
 
     def flow_removed(self, msg):
         if not self.enabled:
