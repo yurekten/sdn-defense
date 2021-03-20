@@ -40,7 +40,7 @@ class MultipathManager(BaseDefenseManager):
             'random_ip_subnet': "10.93.0.0",  # random ip subnet, default mask is 255.255.0.0
             'max_random_paths': 200,  # maximum random paths used in multipath trackers
             'max_installed_path_count': 2,  # maximum flow count installed in switch for each path
-            'max_time_period_in_second': 5,  # random path expire time in seconds.
+            'max_time_period_in_second': 4,  # random path expire time in seconds.
             'lowest_flow_priority': 20000,  # minimum flow priority in random path flows
         }
 

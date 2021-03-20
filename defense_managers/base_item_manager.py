@@ -136,7 +136,7 @@ class ManagedItemManager(BaseDefenseManager):
         self.statistics["hit_count"] = 0
         self.statistics["reset_time"] = datetime.now().timestamp()
 
-    def create_flows(self, src_dpid_, src_in_port_, src_ip_, dst_dpid_, dst_dpid_port_, dst_ip_, priority, nsh_spi, nsh_si, reverse=False):
+    def create_flows(self, src_dpid_, src_in_port_, src_ip_, dst_dpid_, dst_dpid_port_, dst_ip_, src_eth_, dst_eth_, priority, nsh_spi, nsh_si, reverse=False):
         if reverse:
             dst_dpid = src_dpid_
             dst_dpid_port = src_in_port_
@@ -144,6 +144,8 @@ class ManagedItemManager(BaseDefenseManager):
             src_dpid = dst_dpid_
             src_in_port = dst_dpid_port_
             src_ip = dst_ip_
+            src_eth = dst_eth_
+            dst_eth = src_eth_
             #nsh_si = self.dst_si
         else:
             src_dpid = src_dpid_
@@ -152,6 +154,8 @@ class ManagedItemManager(BaseDefenseManager):
             dst_dpid = dst_dpid_
             dst_dpid_port = dst_dpid_port_
             dst_ip = dst_ip_
+            src_eth = src_eth_
+            dst_eth = dst_eth_
             #nsh_si = self.src_si
 
         flow_tuple = (src_dpid, src_in_port, src_ip, dst_dpid, dst_dpid_port, dst_ip)
@@ -162,7 +166,8 @@ class ManagedItemManager(BaseDefenseManager):
 
         self.managed_paths[flow_tuple] = current_path
 
-        match_actions, src_ip, dst_ip = self._create_service_match_actions_for(current_path, src_ip, dst_ip,
+        match_actions, src_ip, dst_ip = self._create_service_match_actions_for(current_path, src_ip, dst_ip, src_eth,
+                                                                               dst_eth,
                                                                                nsh_spi, nsh_si)
         first = None
         install_path_ordered = {}
@@ -209,7 +214,7 @@ class ManagedItemManager(BaseDefenseManager):
     def create_random_ip(self):
         return self.random_ip_subnet_prefix + "." + str(random.randint(1, 254)) + "." + str(random.randint(1, 254))
 
-    def _create_service_match_actions_for(self, path, src_ip, dst_ip, nsh_spi=100, nsh_si=255):
+    def _create_service_match_actions_for(self, path, src_ip, dst_ip, src_eth, dst_eth, nsh_spi=100, nsh_si=255):
         match_actions = {}
         path_size = len(path)
         path_ind = -1
@@ -244,11 +249,13 @@ class ManagedItemManager(BaseDefenseManager):
                     eth_encap_action = ofp_parser.NXActionEncapEther()
                     nsh_spi_action = ofp_parser.OFPActionSetField(nsh_spi=nsh_spi)
                     nsh_si_action = ofp_parser.OFPActionSetField(nsh_si=nsh_si)
-
+                    set_eth_dst_action = ofp_parser.OFPActionSetField(eth_dst=dst_eth)
+                    #set_eth_src_action = ofp_parser.OFPActionSetField(eth_src=src_eth)
                     nsh_c1_action = ofp_parser.OFPActionSetField(nsh_c1=self.ip2int(src_ip))
                     nsh_c2_action = ofp_parser.OFPActionSetField(nsh_c2=self.ip2int(dst_ip))
 
-                    actions = [nsh_encap_action, nsh_spi_action, nsh_si_action, nsh_c1_action, nsh_c2_action, eth_encap_action, output_action]
+                    actions = [nsh_encap_action, nsh_spi_action, nsh_si_action, nsh_c1_action, nsh_c2_action,
+                               eth_encap_action, set_eth_dst_action, output_action]
 
                 elif path_ind >= path_size - 1:
                     match_ip = ofp_parser.OFPMatch(eth_type_nxm=0x894f, nsh_spi=nsh_spi, nsh_si=nsh_si)

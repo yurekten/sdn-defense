@@ -2,7 +2,8 @@ import logging
 import os
 from datetime import datetime
 from random import random
-
+import csv
+import time
 from ryu.lib import hub
 
 from configuration import CONTROLLER_IP
@@ -13,7 +14,7 @@ CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
 DEFAULT_IP_WHITELIST_FILE = os.path.join(CURRENT_PATH, "ip_whitelist.txt")
 DEFAULT_IP_SUPICIOUS_FILE = os.path.join(CURRENT_PATH, "ip_suspicious.txt")
-DECOY_IP_ADDRESS = "10.0.88.11"
+DECOY_IP_ADDRESS = "10.0.88.15"
 
 
 class SendToDecoyManager(ManagedItemManager):
@@ -39,6 +40,7 @@ class SendToDecoyManager(ManagedItemManager):
         self.decoy_dpid_port = None
         self.decoy_eth_address = None
         self.default_priority = default_priority
+        self.test_completed = False
         if self.enabled:
             hub.spawn(self._find_decoy)
 
@@ -73,14 +75,30 @@ class SendToDecoyManager(ManagedItemManager):
                     f'{datetime.now()} - {self.name} - Decoy is connected to datapath {dpid}, port {in_port}')
         else:
             self._send_to_decoy(request_ctx, response_ctx)
+            # if self.test_completed:
+            #     pass
+            #     #self._send_to_decoy(request_ctx, response_ctx)
+            # else:
+            #     src_ip = request_ctx.params.src_ip
+            #     src_dpid = request_ctx.params.src_dpid
+            #     dst_dpid_out_port = request_ctx.params.dst_dpid_out_port
+            #     src = self.host_ip_map[src_ip][2]
+            #     h1 = self.hosts[src]
+            #     # only source dpid is processed
+            #     if src_ip in self.managed_item_list and dst_dpid_out_port is not None and h1[0] == src_dpid:
+            #         self.calculate(request_ctx, response_ctx)
+            #         self.test_completed = True
 
-
-    def _send_to_decoy(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse):
+    def _send_to_decoy(self, request_ctx: SDNControllerRequest, response_ctx: SDNControllerResponse, priority = None):
         if not self.enabled:
             return
+        if priority is None:
+            priority = self.default_priority
         src_ip = request_ctx.params.src_ip
         dst_ip = request_ctx.params.dst_ip
         dst_dpid = request_ctx.params.dst_dpid
+        dst_eth = request_ctx.params.dst_eth
+        src_eth = request_ctx.params.src_eth
         dst_dpid_out_port = request_ctx.params.dst_dpid_out_port
         if dst_dpid_out_port is None:
             return
@@ -99,23 +117,45 @@ class SendToDecoyManager(ManagedItemManager):
             if h1[0] != src_dpid:
                 return
             # TODO: Check IP changes port
-            #if src_ip in self.applied_item_list and len(self.applied_item_list[src_ip]) > 0:
-            #    applied_rules = self.applied_item_list[src_ip]
-            #    if (src_dpid, src_in_port) in applied_rules:
-            #        return
+            if src_ip in self.applied_item_list and len(self.applied_item_list[src_ip]) > 0:
+                applied_rules = self.applied_item_list[src_ip]
+                if (src_dpid, src_in_port) in applied_rules and self.test_completed:
+                    return
 
             nsh_spi = self.spi
             nsh_si = self.src_si
-            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, dst_ip, nsh_spi, nsh_si, self.default_priority)
+            self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, dst_ip, src_eth, self.decoy_eth_address, nsh_spi, nsh_si, priority)
             nsh_si = self.src_si - 1
             #self.create_flows(src_dpid, src_in_port, src_ip, self.decoy_dpid, self.decoy_dpid_port, dst_ip, self.default_priority,
             #                  reverse=True)
+            self.create_flows(self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, src_dpid, src_in_port, src_ip, self.decoy_eth_address, src_eth,
+                              nsh_spi, nsh_si, priority)
 
-            self.create_flows(self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, dst_dpid, dst_dpid_out_port, dst_ip, nsh_spi, nsh_si, self.default_priority)
-            nsh_si = self.src_si - 2
-            self.create_flows(self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, dst_dpid, dst_dpid_out_port, dst_ip, nsh_spi, nsh_si, self.default_priority,
-                              reverse=True)
+            #self.create_flows(self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, dst_dpid, dst_dpid_out_port, dst_ip, nsh_spi, nsh_si, self.default_priority)
+            #nsh_si = self.src_si - 2
+            #self.create_flows(self.decoy_dpid, self.decoy_dpid_port, self.decoy_ip, src_dpid, src_in_port, src_ip, nsh_spi, nsh_si, self.default_priority,
+            #                  reverse=True)
 
+
+
+    def calculate(self, request_ctx, response_ctx):
+
+        statistics = list()
+        start = time.perf_counter()
+        priority = self.default_priority
+        for j in range(1, 401, 1):
+            for i in range(1):
+                priority = priority + 1
+                self._send_to_decoy(request_ctx, response_ctx, priority)
+            stop = time.perf_counter()
+            statistics.append((j, (stop-start)*1000))
+
+        with open('send-to-decoy-delay-time.csv', mode='w') as out_file:
+            file_writer = csv.writer(out_file, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            for res in statistics:
+                file_writer.writerow(list(res))
+
+        print("send-to-decoy-delay-time.csv is created")
 
     def flow_removed(self, msg):
         if not self.enabled:

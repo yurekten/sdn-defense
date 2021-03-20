@@ -76,7 +76,7 @@ class SDNDefenseApp(app_manager.RyuApp):
         blacklist_enabled = False
         ids_blacklist_enabled = False
         send_to_decoy_enabled = True
-        quarantine_manager_enabled = True
+        quarantine_manager_enabled = False
         self.defense_managers_dict = {}
         self.multipath_manager = MultipathManager(self, multipath_enabled)
         self.blacklist_manager = BlacklistManager(self, blacklist_enabled)
@@ -206,42 +206,14 @@ class SDNDefenseApp(app_manager.RyuApp):
             dst_dpid = self.host_ip_map[dst_ip][0]
             dst_dpid_out_port = self.host_ip_map[dst_ip][1]
 
-        if src_ip != "10.0.88.5":
-            request_params = PacketParams(src_dpid=dpid, in_port=in_port, src_ip=src_ip,
-                                          dst_ip=dst_ip, src_eth=src, dst_eth=dst,
-                                          dst_dpid=dst_dpid, dst_dpid_out_port=dst_dpid_out_port,
-                                          default_match=default_match)
-            request_ctx = SDNControllerRequest(msg, request_params)
+        request_params = PacketParams(src_dpid=dpid, in_port=in_port, src_ip=src_ip,
+                                      dst_ip=dst_ip, src_eth=src, dst_eth=dst,
+                                      dst_dpid=dst_dpid, dst_dpid_out_port=dst_dpid_out_port,
+                                      default_match=default_match)
+        request_ctx = SDNControllerRequest(msg, request_params)
 
-            finish = self.new_packet_detected(request_ctx)
-        elif self.initial:
-            finish = False
-            self.initial = False
-            stats = {}
-            for i in range(5, 401, 5):
+        finish = self.new_packet_detected(request_ctx)
 
-                start = time.perf_counter()
-                for j in range(0, i, 5):
-                        request_params = PacketParams(src_dpid=dpid, in_port=in_port, src_ip=src_ip,
-                                                      dst_ip=dst_ip, src_eth=src, dst_eth=dst,
-                                                      dst_dpid=dst_dpid, dst_dpid_out_port=dst_dpid_out_port, default_match=default_match)
-                        request_ctx = SDNControllerRequest(msg, request_params)
-
-                        finish = self.new_packet_detected(request_ctx)
-                #logger.warning(f"Iteration {i}")
-                stop = time.perf_counter()
-                stats[i] = (stop - start)
-
-                # if src_ip in self.blacklist_manager.managed_item_list and src_ip not in self.q_stats:
-                #     stop = time.perf_counter()
-                #     self.q_stats[src_ip] = 1000*(stop -start)
-                #     if FACTOR == len(self.q_stats):
-            with open('sfc_stats.csv', mode='w') as out_file:
-                file_writer = csv.writer(out_file, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                for res, val in stats.items():
-                    file_writer.writerow([res, val])
-        else:
-            finish = False
 
         if finish:
             return

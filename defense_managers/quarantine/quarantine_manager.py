@@ -15,7 +15,7 @@ CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
 DEFAULT_IP_WHITELIST_FILE = os.path.join(CURRENT_PATH, "ip_whitelist.txt")
 DEFAULT_IP_QUARANTINE_FILE = os.path.join(CURRENT_PATH, "ip_quarantine.txt")
-ACCESSIBLE_SERVER_IP = "10.0.88.11"
+ACCESSIBLE_SERVER_IP = "10.0.88.15"
 
 
 class QuarantineManager(ManagedItemManager):
@@ -115,10 +115,10 @@ class QuarantineManager(ManagedItemManager):
             flow = self.create_drop_rule(src_dpid, src_in_port, src_ip, self.priority, source_ip=False)
             manager_response.action_list.append(flow)
 
-            flow = self.access_to_server_rule(src_dpid, src_in_port, src_ip, self.priority, to_server=True)
+            flow = self.access_to_server_rule(src_dpid, src_in_port, src_ip, self.priority + 1, to_server=True)
             manager_response.action_list.append(flow)
 
-            flow = self.access_to_server_rule(src_dpid, src_in_port, src_ip, self.priority, to_server=False)
+            flow = self.access_to_server_rule(src_dpid, src_in_port, src_ip, self.priority + 1, to_server=False)
             manager_response.action_list.append(flow)
             self._add_ip_to_list(src_dpid, src_in_port, src_ip)
 
@@ -144,6 +144,7 @@ class QuarantineManager(ManagedItemManager):
             output = current_path[src_dpid][1]
         else:
             output = src_in_port
+
         actions = [ofp_parser.OFPActionOutput(output)]
         ofproto = dp.ofproto
 

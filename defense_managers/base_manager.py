@@ -61,6 +61,7 @@ class BaseDefenseManager(ABC):
         nodes = []
         for node in path:
             nodes.append(node)
+
         return nodes
 
     def add_ports_to_paths(self, paths, first_port, last_port):

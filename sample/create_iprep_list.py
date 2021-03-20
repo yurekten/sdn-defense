@@ -5,8 +5,36 @@ import threading
 from queue import Queue, Empty
 from urllib.parse import urlparse
 
-from utils.common_utils import is_valid_remote_ip
 
+def is_valid_ip(ip):
+    """
+    validate sting ip if it is valid ip
+    """
+    try:
+        socket.inet_aton(ip)
+
+        if ip.startswith("0."):
+            return False
+
+        if ip.endswith(".255"):
+            return False
+
+        return True
+    except socket.error:
+        return False
+
+def is_valid_remote_ip(ip):
+    """
+    validate sting ip if it is valid remote ip
+    """
+    valid = is_valid_ip(ip)
+    if not valid:
+        return False
+
+    if ip.startswith("10.") or ip.startswith("172.16.") or ip.startswith("192.168."):
+        return False
+
+    return True
 
 def create_ip_rep():
     CURRENT_PATH = pathlib.Path().absolute()
